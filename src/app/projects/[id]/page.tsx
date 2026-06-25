@@ -22,6 +22,9 @@ const STATUS_FULL = "\u5df2\u6ee1"
 const STATUS_PENDING = "\u5f85\u5ba1\u6838"
 const STATUS_APPROVED = "\u5df2\u901a\u8fc7"
 const STATUS_REJECTED = "\u5df2\u62d2\u7edd"
+const MILESTONE_TODO = "\u5f85\u5f00\u59cb"
+const MILESTONE_DOING = "\u8fdb\u884c\u4e2d"
+const MILESTONE_DONE = "\u5df2\u5b8c\u6210"
 
 type Project = {
   id: string
@@ -54,6 +57,15 @@ type PhaseApplication = {
   created_at: string | null
 }
 
+type ProjectMilestone = {
+  id: string | number
+  title: string | null
+  description: string | null
+  status: string | null
+  due_date: string | null
+  sort_order?: number | null
+}
+
 type Notice = {
   type: "success" | "error"
   title: string
@@ -65,6 +77,12 @@ const phaseStatusStyles: Record<string, string> = {
   [STATUS_FULL]: "border-blue-500/40 bg-blue-500/15 text-blue-300",
   "\u8fdb\u884c\u4e2d": "border-orange-500/40 bg-orange-500/15 text-orange-300",
   "\u5df2\u5b8c\u6210": "border-gray-600 bg-gray-800 text-gray-300",
+}
+
+const milestoneStatusStyles: Record<string, string> = {
+  [MILESTONE_TODO]: "border-gray-600 bg-gray-800 text-gray-300",
+  [MILESTONE_DOING]: "border-orange-500/40 bg-orange-500/15 text-orange-300",
+  [MILESTONE_DONE]: "border-emerald-500/40 bg-emerald-500/15 text-emerald-300",
 }
 
 function formatDate(date: string | null) {
@@ -131,10 +149,15 @@ export default function ProjectDetailPage() {
   const { loading: authLoading, user } = useAuth()
   const projectId = params.id
   const [project, setProject] = useState<Project | null>(null)
+  const [milestones, setMilestones] = useState<ProjectMilestone[]>([])
   const [projectPhases, setProjectPhases] = useState<ProjectPhase[]>([])
   const [phaseApplications, setPhaseApplications] = useState<PhaseApplication[]>([])
   const [loadingProject, setLoadingProject] = useState(true)
   const [notice, setNotice] = useState<Notice | null>(null)
+  const [showMilestoneDialog, setShowMilestoneDialog] = useState(false)
+  const [milestoneTitle, setMilestoneTitle] = useState("")
+  const [milestoneDescription, setMilestoneDescription] = useState("")
+  const [milestoneDueDate, setMilestoneDueDate] = useState("")
 
   const isProjectOwner = Boolean(user && project?.user_id === user.id)
   const skills = useMemo(() => normalizeSkills(project?.skills ?? null), [project])
@@ -154,9 +177,15 @@ export default function ProjectDetailPage() {
     async function loadProject() {
       const [
         { data: projectData, error: projectError },
+        { data: milestonesData },
         { data: phasesData },
       ] = await Promise.all([
         supabase.from("projects").select("*").eq("id", projectId).single(),
+        supabase
+          .from("project_milestones")
+          .select("id, title, description, status, due_date, sort_order")
+          .eq("project_id", projectId)
+          .order("sort_order", { ascending: true }),
         supabase
           .from("project_phases")
           .select(
@@ -205,6 +234,7 @@ export default function ProjectDetailPage() {
       }
 
       setProject(projectError || !projectData ? null : (projectData as Project))
+      setMilestones((milestonesData ?? []) as ProjectMilestone[])
       setProjectPhases(phaseRows)
       setPhaseApplications(applicationsWithEmail)
       setLoadingProject(false)
@@ -218,6 +248,7 @@ export default function ProjectDetailPage() {
       }
 
       setProject(null)
+      setMilestones([])
       setProjectPhases([])
       setPhaseApplications([])
       setLoadingProject(false)
@@ -345,6 +376,96 @@ export default function ProjectDetailPage() {
     window.location.reload()
   }
 
+  async function handleCreateMilestone() {
+    if (!user || !project || project.user_id !== user.id) {
+      router.push("/auth/login")
+      return
+    }
+
+    const title = milestoneTitle.trim()
+
+    if (!title) {
+      setNotice({
+        type: "error",
+        title: "Milestone title required",
+        message: "Please enter a milestone title.",
+      })
+      return
+    }
+
+    const supabase = createClient()
+    const { error } = await supabase.from("project_milestones").insert({
+      project_id: projectId,
+      title,
+      description: milestoneDescription.trim(),
+      due_date: milestoneDueDate || null,
+      status: MILESTONE_TODO,
+      sort_order: milestones.length + 1,
+    })
+
+    if (error) {
+      setNotice({
+        type: "error",
+        title: "Milestone create failed",
+        message: error.message,
+      })
+      return
+    }
+
+    window.location.reload()
+  }
+
+  async function handleUpdateMilestoneStatus(
+    milestoneId: string | number,
+    status: string,
+  ) {
+    if (!user || !project || project.user_id !== user.id) {
+      router.push("/auth/login")
+      return
+    }
+
+    const supabase = createClient()
+    const { error } = await supabase
+      .from("project_milestones")
+      .update({ status })
+      .eq("id", milestoneId)
+
+    if (error) {
+      setNotice({
+        type: "error",
+        title: "Milestone update failed",
+        message: error.message,
+      })
+      return
+    }
+
+    window.location.reload()
+  }
+
+  async function handleDeleteMilestone(milestoneId: string | number) {
+    if (!user || !project || project.user_id !== user.id) {
+      router.push("/auth/login")
+      return
+    }
+
+    const supabase = createClient()
+    const { error } = await supabase
+      .from("project_milestones")
+      .delete()
+      .eq("id", milestoneId)
+
+    if (error) {
+      setNotice({
+        type: "error",
+        title: "Milestone delete failed",
+        message: error.message,
+      })
+      return
+    }
+
+    window.location.reload()
+  }
+
   if (loadingProject) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#05050B] px-6 text-white">
@@ -460,6 +581,112 @@ export default function ProjectDetailPage() {
                 </p>
               </div>
             </div>
+
+            <section className="rounded-2xl border border-gray-800 bg-black/20 p-6 shadow-md">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-white">
+                    {"\u91cc\u7a0b\u7891\u7ba1\u7406"}
+                  </h2>
+                  <p className="mt-2 text-base leading-relaxed text-white/45">
+                    {"\u8ddf\u8e2a\u9879\u76ee\u5173\u952e\u8282\u70b9\u3001\u72b6\u6001\u548c\u622a\u6b62\u65e5\u671f"}
+                  </p>
+                </div>
+                {isProjectOwner ? (
+                  <Button
+                    type="button"
+                    onClick={() => setShowMilestoneDialog(true)}
+                    className="bg-[#6C63FF] text-white hover:bg-[#5B54E8]"
+                  >
+                    {"\u6dfb\u52a0\u91cc\u7a0b\u7891"}
+                  </Button>
+                ) : null}
+              </div>
+
+              {milestones.length === 0 ? (
+                <div className="mt-6 rounded-xl border border-gray-800 bg-white/[0.03] p-5 text-base text-white/45">
+                  {"\u6682\u65e0\u91cc\u7a0b\u7891"}
+                </div>
+              ) : (
+                <div className="mt-6 space-y-4">
+                  {milestones.map((milestone) => {
+                    const milestoneStatus = milestone.status || MILESTONE_TODO
+                    const statusClass =
+                      milestoneStatusStyles[milestoneStatus] ??
+                      milestoneStatusStyles[MILESTONE_TODO]
+
+                    return (
+                      <div
+                        key={milestone.id}
+                        className="rounded-xl border border-gray-800 bg-white/[0.03] p-5 shadow-md"
+                      >
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <h3 className="text-lg font-semibold text-white">
+                              {milestone.title || "Untitled milestone"}
+                            </h3>
+                            {milestone.description ? (
+                              <p className="mt-2 text-sm leading-6 text-white/50">
+                                {milestone.description}
+                              </p>
+                            ) : null}
+                            <p className="mt-3 text-sm text-white/35">
+                              {"\u622a\u6b62\u65e5\u671f"}: {formatDate(milestone.due_date)}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3">
+                            <span
+                              className={cn(
+                                "rounded-full border px-3 py-1 text-xs font-medium",
+                                statusClass,
+                              )}
+                            >
+                              {milestoneStatus}
+                            </span>
+                            {isProjectOwner ? (
+                              <>
+                                <select
+                                  value={milestoneStatus}
+                                  onChange={(event) =>
+                                    void handleUpdateMilestoneStatus(
+                                      milestone.id,
+                                      event.target.value,
+                                    )
+                                  }
+                                  className="h-9 rounded-lg border border-white/10 bg-[#11111D] px-3 text-sm text-white outline-none transition focus:border-[#6C63FF] focus:ring-2 focus:ring-[#6C63FF]/20"
+                                >
+                                  {[MILESTONE_TODO, MILESTONE_DOING, MILESTONE_DONE].map(
+                                    (status) => (
+                                      <option
+                                        key={status}
+                                        value={status}
+                                        className="bg-[#11111D]"
+                                      >
+                                        {status}
+                                      </option>
+                                    ),
+                                  )}
+                                </select>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() =>
+                                    void handleDeleteMilestone(milestone.id)
+                                  }
+                                  className="border-red-500/40 bg-transparent text-red-200 hover:bg-red-500/10 hover:text-red-100"
+                                >
+                                  {"\u5220\u9664"}
+                                </Button>
+                              </>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </section>
 
             <section className="rounded-2xl border border-gray-800 bg-black/20 p-6 shadow-md">
               <div>
@@ -710,6 +937,82 @@ export default function ProjectDetailPage() {
           </CardContent>
         </Card>
       </section>
+
+      {showMilestoneDialog ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-6">
+          <div className="w-full max-w-lg rounded-2xl border border-gray-800 bg-[#10101A] p-6 text-white shadow-2xl shadow-black/40">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-white">
+                  {"\u6dfb\u52a0\u91cc\u7a0b\u7891"}
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-white/45">
+                  {"\u8f93\u5165\u6807\u9898\u3001\u63cf\u8ff0\u548c\u622a\u6b62\u65e5\u671f"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMilestoneDialog(false)}
+                className="rounded-lg px-2 py-1 text-sm text-white/45 transition hover:bg-white/10 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <label className="grid gap-2 text-sm text-white/70">
+                {"\u6807\u9898"}
+                <input
+                  value={milestoneTitle}
+                  onChange={(event) => setMilestoneTitle(event.target.value)}
+                  className="h-10 rounded-lg border border-white/10 bg-[#11111D] px-3 text-sm text-white outline-none transition focus:border-[#6C63FF] focus:ring-3 focus:ring-[#6C63FF]/20"
+                  placeholder="MVP delivery"
+                />
+              </label>
+
+              <label className="grid gap-2 text-sm text-white/70">
+                {"\u63cf\u8ff0"}
+                <textarea
+                  value={milestoneDescription}
+                  onChange={(event) =>
+                    setMilestoneDescription(event.target.value)
+                  }
+                  className="min-h-24 rounded-lg border border-white/10 bg-[#11111D] px-3 py-2 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-[#6C63FF] focus:ring-3 focus:ring-[#6C63FF]/20"
+                  placeholder="Describe the milestone goal"
+                />
+              </label>
+
+              <label className="grid gap-2 text-sm text-white/70">
+                {"\u622a\u6b62\u65e5\u671f"}
+                <input
+                  type="date"
+                  value={milestoneDueDate}
+                  onChange={(event) => setMilestoneDueDate(event.target.value)}
+                  className="h-10 rounded-lg border border-white/10 bg-[#11111D] px-3 text-sm text-white outline-none transition focus:border-[#6C63FF] focus:ring-3 focus:ring-[#6C63FF]/20"
+                />
+              </label>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowMilestoneDialog(false)}
+                className="border-white/10 bg-transparent text-white hover:bg-white/10"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleCreateMilestone()}
+                className="bg-[#6C63FF] text-white hover:bg-[#5B54E8]"
+              >
+                {"\u4fdd\u5b58\u91cc\u7a0b\u7891"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   )
 }
