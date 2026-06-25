@@ -257,7 +257,7 @@ export default function ProjectDetailPage() {
         supabase
           .from("project_phases")
           .select(
-            "id, name, headcount, current_applicants, applicant_count, applications_count, status, share_percent",
+            "id, project_id, name, headcount, status, share_percent, sort_order",
           )
           .eq("project_id", projectId)
           .order("sort_order", { ascending: true }),
