@@ -1,37 +1,48 @@
 import { NextResponse } from "next/server"
 
-import { sendEmail } from "@/lib/email"
+const TEST_EMAIL = "zhanghaiopenclaw@gmail.com"
 
 export async function GET() {
-  const to = process.env.TEST_EMAIL_TO || process.env.RESEND_TEST_EMAIL
+  const apiKey = process.env.RESEND_API_KEY
 
-  if (!to) {
+  if (!apiKey) {
     return NextResponse.json(
       {
-        error: "请先配置 TEST_EMAIL_TO 或 RESEND_TEST_EMAIL 环境变量",
+        error: "RESEND_API_KEY 未配置",
       },
-      { status: 400 },
+      { status: 500 },
     )
   }
 
-  const result = await sendEmail({
-    to,
-    subject: "JBGIT 邮件测试",
-    html: "<p>这是一封测试邮件</p>",
-    text: "这是一封测试邮件",
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: "onboarding@resend.dev",
+      to: [TEST_EMAIL],
+      subject: "JBGIT 邮件测试",
+      html: "<p>这是一封测试邮件</p>",
+      text: "这是一封测试邮件",
+    }),
   })
 
-  if (!result.ok) {
+  const result = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
     return NextResponse.json(
       {
-        error: result.error || "邮件发送失败",
+        error: "邮件发送失败",
+        result,
       },
       { status: 500 },
     )
   }
 
   return NextResponse.json({
-    message: result.skipped ? "邮件服务未配置，已跳过发送" : "测试邮件已发送",
+    message: "测试邮件已发送",
     result,
   })
 }
