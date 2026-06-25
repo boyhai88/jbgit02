@@ -75,6 +75,14 @@ type ProjectPhase = {
   share_percent: number | string | null
 }
 
+type PhaseApplication = {
+  id: string | number
+  phase_id: string | number | null
+  user_id: string | null
+  status: string | null
+  created_at: string | null
+}
+
 type EarningDraft = {
   id?: string | number
   role: string
@@ -201,6 +209,7 @@ export default function ProjectDetailPage() {
   const [earningRules, setEarningRules] = useState<EarningRule[]>([])
   const [milestones, setMilestones] = useState<Milestone[]>([])
   const [projectPhases, setProjectPhases] = useState<ProjectPhase[]>([])
+  const [phaseApplications, setPhaseApplications] = useState<PhaseApplication[]>([])
   const [reviews, setReviews] = useState<Review[]>([])
   const [applications, setApplications] = useState<ProjectApplication[]>([])
   const [canReview, setCanReview] = useState(false)
@@ -273,6 +282,15 @@ export default function ProjectDetailPage() {
       ])
 
       const loadedProject = error || !projectData ? null : (projectData as Project)
+      const phaseRows = (phasesData ?? []) as ProjectPhase[]
+      const phaseIds = phaseRows.map((phase) => phase.id)
+      const { data: phaseApplicationsData } =
+        phaseIds.length > 0
+          ? await supabase
+              .from("phase_applications")
+              .select("id, phase_id, user_id, status, created_at")
+              .in("phase_id", phaseIds)
+          : { data: [] }
       const applicationRows = (applicationsData ?? []) as Array<{
         id: string | number
         user_id: string | null
@@ -309,7 +327,8 @@ export default function ProjectDetailPage() {
       setProject(loadedProject)
       setEarningRules((earningsData ?? []) as EarningRule[])
       setMilestones((milestonesData ?? []) as Milestone[])
-      setProjectPhases((phasesData ?? []) as ProjectPhase[])
+      setProjectPhases(phaseRows)
+      setPhaseApplications((phaseApplicationsData ?? []) as PhaseApplication[])
       setApplications(applicationsWithUsers)
       const visibleReviews = ((reviewsData ?? []) as Review[]).filter((review) => {
         if (review.status === "已通过") {
@@ -336,6 +355,7 @@ export default function ProjectDetailPage() {
       setEarningRules([])
       setMilestones([])
       setProjectPhases([])
+      setPhaseApplications([])
       setReviews([])
       setApplications([])
       setCanReview(false)
@@ -402,6 +422,77 @@ export default function ProjectDetailPage() {
       type: "success",
       title: "申请已提交，等待审核",
       message: "项目发起人审核后会与你联系。",
+    })
+  }
+
+  async function handleApplyPhase(phase: ProjectPhase, applicantCount: number) {
+    if (authLoading) {
+      return
+    }
+
+    if (!user) {
+      router.push("/auth/login")
+      return
+    }
+
+    const headcount = getPhaseHeadcount(phase)
+    const isFull = headcount > 0 && applicantCount >= headcount
+
+    if (isFull) {
+      setNotice({
+        type: "error",
+        title: "工序已满",
+        message: "该工序申请人数已达到招募人数。",
+      })
+      return
+    }
+
+    const hasApplied = phaseApplications.some(
+      (application) =>
+        String(application.phase_id) === String(phase.id) &&
+        application.user_id === user.id,
+    )
+
+    if (hasApplied) {
+      setNotice({
+        type: "error",
+        title: "已申请",
+        message: "你已经申请过该工序，请勿重复提交。",
+      })
+      return
+    }
+
+    setNotice(null)
+
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from("phase_applications")
+      .insert({
+        project_id: projectId,
+        phase_id: phase.id,
+        user_id: user.id,
+        status: "待审核",
+      })
+      .select("id, phase_id, user_id, status, created_at")
+      .single()
+
+    if (error) {
+      const isDuplicate =
+        error.code === "23505" || error.message.includes("duplicate")
+
+      setNotice({
+        type: "error",
+        title: isDuplicate ? "已申请" : "工序申请失败",
+        message: isDuplicate ? "你已经申请过该工序，请勿重复提交。" : error.message,
+      })
+      return
+    }
+
+    setPhaseApplications((current) => [...current, data as PhaseApplication])
+    setNotice({
+      type: "success",
+      title: "工序申请已提交",
+      message: "请等待项目方审核。",
     })
   }
 
@@ -903,9 +994,29 @@ export default function ProjectDetailPage() {
                 <div className="mt-6 space-y-4">
                   {projectPhases.map((phase) => {
                     const headcount = getPhaseHeadcount(phase)
-                    const applicants = getPhaseApplicantCount(phase)
-                    const phaseStatus = getPhaseStatus(phase)
-                    const progress = getPhaseProgress(phase)
+                    const recordedApplicants = phaseApplications.filter(
+                      (application) =>
+                        String(application.phase_id) === String(phase.id),
+                    )
+                    const applicants =
+                      recordedApplicants.length > 0
+                        ? recordedApplicants.length
+                        : getPhaseApplicantCount(phase)
+                    const isFull = headcount > 0 && applicants >= headcount
+                    const hasApplied = Boolean(
+                      user &&
+                        recordedApplicants.some(
+                          (application) => application.user_id === user.id,
+                        ),
+                    )
+                    const phaseStatus = isFull ? "已满" : getPhaseStatus(phase)
+                    const progress =
+                      headcount > 0
+                        ? Math.min(
+                            100,
+                            Math.round((applicants / headcount) * 100),
+                          )
+                        : getPhaseProgress(phase)
 
                     return (
                       <div
@@ -953,6 +1064,24 @@ export default function ProjectDetailPage() {
                               style={{ width: `${progress}%` }}
                             />
                           </div>
+                        </div>
+                        <div className="mt-5 flex justify-end border-t border-gray-800 pt-4">
+                          <Button
+                            type="button"
+                            disabled={isFull || hasApplied}
+                            onClick={() => void handleApplyPhase(phase, applicants)}
+                            className={
+                              isFull || hasApplied
+                                ? "bg-white/10 text-white/45 hover:bg-white/10"
+                                : "bg-[#6C63FF] text-white hover:bg-[#5B54E8]"
+                            }
+                          >
+                            {isFull
+                              ? "已满"
+                              : hasApplied
+                                ? "已申请"
+                                : "申请加入"}
+                          </Button>
                         </div>
                       </div>
                     )
