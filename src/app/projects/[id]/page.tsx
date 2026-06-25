@@ -25,6 +25,14 @@ const STATUS_REJECTED = "\u5df2\u62d2\u7edd"
 const MILESTONE_TODO = "\u5f85\u5f00\u59cb"
 const MILESTONE_DOING = "\u8fdb\u884c\u4e2d"
 const MILESTONE_DONE = "\u5df2\u5b8c\u6210"
+const REVIEW_STATUS_PENDING = "\u5f85\u5ba1\u6838"
+const REVIEW_STATUS_APPROVED = "\u5df2\u901a\u8fc7"
+const REVIEW_CATEGORIES = [
+  "\u4e13\u4e1a\u6280\u80fd",
+  "\u534f\u4f5c\u80fd\u529b",
+  "\u4ea4\u4ed8\u8d28\u91cf",
+  "\u6c9f\u901a\u6548\u7387",
+]
 
 type Project = {
   id: string
@@ -64,6 +72,17 @@ type ProjectMilestone = {
   status: string | null
   due_date: string | null
   sort_order?: number | null
+}
+
+type UserReview = {
+  id: string | number
+  reviewer_id: string | null
+  reviewer_email?: string | null
+  rating: number | null
+  category: string | null
+  comment: string | null
+  status: string | null
+  created_at: string | null
 }
 
 type Notice = {
@@ -152,12 +171,18 @@ export default function ProjectDetailPage() {
   const [milestones, setMilestones] = useState<ProjectMilestone[]>([])
   const [projectPhases, setProjectPhases] = useState<ProjectPhase[]>([])
   const [phaseApplications, setPhaseApplications] = useState<PhaseApplication[]>([])
+  const [reviews, setReviews] = useState<UserReview[]>([])
   const [loadingProject, setLoadingProject] = useState(true)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [showMilestoneDialog, setShowMilestoneDialog] = useState(false)
   const [milestoneTitle, setMilestoneTitle] = useState("")
   const [milestoneDescription, setMilestoneDescription] = useState("")
   const [milestoneDueDate, setMilestoneDueDate] = useState("")
+  const [showReviewDialog, setShowReviewDialog] = useState(false)
+  const [reviewRating, setReviewRating] = useState("5")
+  const [reviewCategory, setReviewCategory] = useState(REVIEW_CATEGORIES[0])
+  const [reviewComment, setReviewComment] = useState("")
+  const [submittingReview, setSubmittingReview] = useState(false)
 
   const isProjectOwner = Boolean(user && project?.user_id === user.id)
   const skills = useMemo(() => normalizeSkills(project?.skills ?? null), [project])
@@ -169,6 +194,15 @@ export default function ProjectDetailPage() {
       ),
     [projectPhases],
   )
+  const canReview = Boolean(
+    user &&
+      (isProjectOwner ||
+        phaseApplications.some(
+          (application) =>
+            application.user_id === user.id &&
+            application.status === STATUS_APPROVED,
+        )),
+  )
 
   useEffect(() => {
     let mounted = true
@@ -179,6 +213,7 @@ export default function ProjectDetailPage() {
         { data: projectData, error: projectError },
         { data: milestonesData },
         { data: phasesData },
+        { data: reviewsData },
       ] = await Promise.all([
         supabase.from("projects").select("*").eq("id", projectId).single(),
         supabase
@@ -193,9 +228,16 @@ export default function ProjectDetailPage() {
           )
           .eq("project_id", projectId)
           .order("sort_order", { ascending: true }),
+        supabase
+          .from("user_reviews")
+          .select("id, reviewer_id, rating, category, comment, status, created_at")
+          .eq("project_id", projectId)
+          .eq("status", REVIEW_STATUS_APPROVED)
+          .order("created_at", { ascending: false }),
       ])
 
       const phaseRows = (phasesData ?? []) as ProjectPhase[]
+      const reviewRows = (reviewsData ?? []) as UserReview[]
       const phaseIds = phaseRows.map((phase) => phase.id)
       const { data: phaseApplicationsData } =
         phaseIds.length > 0
@@ -208,9 +250,10 @@ export default function ProjectDetailPage() {
       const applicationRows = (phaseApplicationsData ?? []) as PhaseApplication[]
       const userIds = Array.from(
         new Set(
-          applicationRows
-            .map((application) => application.user_id)
-            .filter((id): id is string => Boolean(id)),
+          [
+            ...applicationRows.map((application) => application.user_id),
+            ...reviewRows.map((review) => review.reviewer_id),
+          ].filter((id): id is string => Boolean(id)),
         ),
       )
       const { data: usersData } =
@@ -228,6 +271,12 @@ export default function ProjectDetailPage() {
           ? emailMap.get(application.user_id) ?? "Unknown email"
           : "Unknown email",
       }))
+      const reviewsWithEmail = reviewRows.map((review) => ({
+        ...review,
+        reviewer_email: review.reviewer_id
+          ? emailMap.get(review.reviewer_id) ?? "Unknown email"
+          : "Unknown email",
+      }))
 
       if (!mounted) {
         return
@@ -237,6 +286,7 @@ export default function ProjectDetailPage() {
       setMilestones((milestonesData ?? []) as ProjectMilestone[])
       setProjectPhases(phaseRows)
       setPhaseApplications(applicationsWithEmail)
+      setReviews(reviewsWithEmail)
       setLoadingProject(false)
     }
 
@@ -251,6 +301,7 @@ export default function ProjectDetailPage() {
       setMilestones([])
       setProjectPhases([])
       setPhaseApplications([])
+      setReviews([])
       setLoadingProject(false)
     })
 
@@ -464,6 +515,58 @@ export default function ProjectDetailPage() {
     }
 
     window.location.reload()
+  }
+
+  async function handleSubmitReview() {
+    if (!user || !project) {
+      router.push("/auth/login")
+      return
+    }
+
+    const comment = reviewComment.trim()
+
+    if (!comment) {
+      setNotice({
+        type: "error",
+        title: "Review comment required",
+        message: "Please enter review content.",
+      })
+      return
+    }
+
+    setSubmittingReview(true)
+    setNotice(null)
+
+    const supabase = createClient()
+    const { error } = await supabase.from("user_reviews").insert({
+      project_id: projectId,
+      reviewer_id: user.id,
+      reviewee_id: project.user_id ?? user.id,
+      rating: Number(reviewRating),
+      category: reviewCategory,
+      comment,
+      status: REVIEW_STATUS_PENDING,
+    })
+
+    if (error) {
+      setSubmittingReview(false)
+      setNotice({
+        type: "error",
+        title: "Review submit failed",
+        message: error.message,
+      })
+      return
+    }
+
+    setNotice({
+      type: "success",
+      title: "\u8bc4\u4ef7\u5df2\u63d0\u4ea4\uff0c\u7b49\u5f85\u5ba1\u6838",
+      message: "\u8bc4\u4ef7\u5ba1\u6838\u901a\u8fc7\u540e\u5c06\u5728\u9879\u76ee\u8be6\u60c5\u4e2d\u5c55\u793a\u3002",
+    })
+    setSubmittingReview(false)
+    setShowReviewDialog(false)
+    setReviewComment("")
+    router.refresh()
   }
 
   if (loadingProject) {
@@ -934,6 +1037,66 @@ export default function ProjectDetailPage() {
                 </div>
               )}
             </section>
+
+            <section className="rounded-2xl border border-gray-800 bg-black/20 p-6 shadow-md">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-white">
+                    {"\u9879\u76ee\u8bc4\u4ef7"}
+                  </h2>
+                  <p className="mt-2 text-base leading-relaxed text-white/45">
+                    {"\u53ea\u5c55\u793a\u5df2\u901a\u8fc7\u5ba1\u6838\u7684\u9879\u76ee\u8bc4\u4ef7"}
+                  </p>
+                </div>
+                {canReview ? (
+                  <Button
+                    type="button"
+                    onClick={() => setShowReviewDialog(true)}
+                    className="bg-[#6C63FF] text-white hover:bg-[#5B54E8]"
+                  >
+                    {"\u53d1\u8868\u8bc4\u4ef7"}
+                  </Button>
+                ) : null}
+              </div>
+
+              {reviews.length === 0 ? (
+                <div className="mt-6 rounded-xl border border-gray-800 bg-white/[0.03] p-5 text-base text-white/45">
+                  {"\u6682\u65e0\u8bc4\u4ef7"}
+                </div>
+              ) : (
+                <div className="mt-6 space-y-4">
+                  {reviews.map((review) => (
+                    <div
+                      key={review.id}
+                      className="rounded-xl border border-gray-800 bg-white/[0.03] p-5 shadow-md"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="font-semibold text-white">
+                            {review.reviewer_email || "Unknown reviewer"}
+                          </p>
+                          <div className="mt-2 flex flex-wrap items-center gap-3">
+                            <span className="font-mono text-sm text-[#8D87FF]">
+                              {"★".repeat(Math.max(0, Math.min(5, review.rating ?? 0)))}
+                              {"☆".repeat(5 - Math.max(0, Math.min(5, review.rating ?? 0)))}
+                            </span>
+                            <span className="rounded-full border border-[#6C63FF]/30 bg-[#6C63FF]/15 px-3 py-1 text-xs text-[#8D87FF]">
+                              {review.category || "Uncategorized"}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-xs text-white/35">
+                          {formatDate(review.created_at)}
+                        </span>
+                      </div>
+                      <p className="mt-4 text-base leading-relaxed text-white/60">
+                        {review.comment || "No comment"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
           </CardContent>
         </Card>
       </section>
@@ -1008,6 +1171,95 @@ export default function ProjectDetailPage() {
                 className="bg-[#6C63FF] text-white hover:bg-[#5B54E8]"
               >
                 {"\u4fdd\u5b58\u91cc\u7a0b\u7891"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showReviewDialog ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-6">
+          <div className="w-full max-w-lg rounded-2xl border border-gray-800 bg-[#10101A] p-6 text-white shadow-2xl shadow-black/40">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-white">
+                  {"\u53d1\u8868\u8bc4\u4ef7"}
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-white/45">
+                  {"\u8bc4\u4ef7\u63d0\u4ea4\u540e\u5c06\u8fdb\u5165\u5f85\u5ba1\u6838\u72b6\u6001"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowReviewDialog(false)}
+                className="rounded-lg px-2 py-1 text-sm text-white/45 transition hover:bg-white/10 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-2 text-sm text-white/70">
+                {"\u8bc4\u5206"}
+                <select
+                  value={reviewRating}
+                  onChange={(event) => setReviewRating(event.target.value)}
+                  className="h-10 rounded-lg border border-white/10 bg-[#11111D] px-3 text-sm text-white outline-none transition focus:border-[#6C63FF] focus:ring-3 focus:ring-[#6C63FF]/20"
+                >
+                  {[1, 2, 3, 4, 5].map((rating) => (
+                    <option key={rating} value={rating} className="bg-[#11111D]">
+                      {rating}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="grid gap-2 text-sm text-white/70">
+                {"\u5206\u7c7b"}
+                <select
+                  value={reviewCategory}
+                  onChange={(event) => setReviewCategory(event.target.value)}
+                  className="h-10 rounded-lg border border-white/10 bg-[#11111D] px-3 text-sm text-white outline-none transition focus:border-[#6C63FF] focus:ring-3 focus:ring-[#6C63FF]/20"
+                >
+                  {REVIEW_CATEGORIES.map((category) => (
+                    <option
+                      key={category}
+                      value={category}
+                      className="bg-[#11111D]"
+                    >
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <label className="mt-4 grid gap-2 text-sm text-white/70">
+              {"\u8bc4\u8bed"}
+              <textarea
+                value={reviewComment}
+                onChange={(event) => setReviewComment(event.target.value)}
+                className="min-h-28 rounded-lg border border-white/10 bg-[#11111D] px-3 py-2 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-[#6C63FF] focus:ring-3 focus:ring-[#6C63FF]/20"
+                placeholder="Write your review"
+              />
+            </label>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowReviewDialog(false)}
+                className="border-white/10 bg-transparent text-white hover:bg-white/10"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={submittingReview}
+                onClick={() => void handleSubmitReview()}
+                className="bg-[#6C63FF] text-white hover:bg-[#5B54E8]"
+              >
+                {submittingReview ? "\u63d0\u4ea4\u4e2d..." : "\u63d0\u4ea4\u8bc4\u4ef7"}
               </Button>
             </div>
           </div>

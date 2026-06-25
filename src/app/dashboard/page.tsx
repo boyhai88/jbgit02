@@ -8,174 +8,101 @@ import {
   Settings,
   UsersRound,
 } from "lucide-react"
-import { revalidatePath } from "next/cache"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 
 import { SiteFooter } from "@/components/footer"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { createClient } from "@/lib/supabase/server"
 import { cn } from "@/lib/utils"
 
-type ApplicationRow = {
+const STATUS_PENDING = "\u5f85\u5ba1\u6838"
+const STATUS_APPROVED = "\u5df2\u901a\u8fc7"
+const STATUS_REJECTED = "\u5df2\u62d2\u7edd"
+const STATUS_RECRUITING = "\u62db\u52df\u4e2d"
+
+type PhaseApplicationRow = {
   id: string | number
-  project_id: string | number
+  phase_id: string | number | null
   status: string | null
   created_at: string | null
-  projects: { name: string | null } | { name: string | null }[] | null
 }
 
-type PublishedProjectRow = {
+type PhaseRow = {
+  id: string | number
+  project_id: string | number | null
+  name: string | null
+}
+
+type ProjectNameRow = {
   id: string | number
   name: string | null
-  status: string | null
-  project_applications: { id: string | number }[] | null
+  status?: string | null
+  project_applications?: { id: string | number }[] | null
 }
 
-type NotificationRow = {
+type MyPhaseApplication = {
   id: string | number
-  title: string | null
-  content: string | null
-  type: string | null
-  is_read: boolean | null
+  project_id: string | number | null
+  project_name: string
+  phase_name: string
+  status: string
   created_at: string | null
 }
 
 const sidebarItems = [
-  { label: "概览", href: "/dashboard", icon: BriefcaseBusiness, active: true },
-  { label: "我的项目", href: "/projects", icon: FolderKanban },
-  { label: "参与的团队", href: "/projects", icon: UsersRound },
-  { label: "收益记录", href: "/dashboard/earnings", icon: CircleDollarSign },
-  { label: "账户设置", href: "/profile", icon: Settings },
+  { label: "Overview", href: "/dashboard", icon: BriefcaseBusiness, active: true },
+  { label: "My Projects", href: "/projects", icon: FolderKanban },
+  { label: "Teams", href: "/projects", icon: UsersRound },
+  { label: "Earnings", href: "/dashboard/earnings", icon: CircleDollarSign },
+  { label: "Settings", href: "/profile", icon: Settings },
 ]
 
 const stats = [
   {
-    label: "参与项目数",
+    label: "Participating projects",
     value: "6",
-    helper: "3 个进行中",
+    helper: "3 active",
     icon: FolderKanban,
   },
   {
-    label: "协作完成率",
+    label: "Completion rate",
     value: "92%",
-    helper: "高于平台平均",
+    helper: "Above platform average",
     icon: CheckCircle2,
   },
   {
-    label: "协作者数",
+    label: "Collaborators",
     value: "18",
-    helper: "本月新增 4 位",
+    helper: "+4 this month",
     icon: UsersRound,
   },
 ]
 
 const activities = [
   {
-    title: "开源 AI 代码审查助手完成 UI 评审",
-    description: "你提交的 Dashboard 原型已被 Lin Chen 标记为通过。",
-    time: "15 分钟前",
+    title: "AI code review assistant updated",
+    description: "The project owner reviewed the latest collaboration progress.",
+    time: "15 min ago",
     href: "/projects/1",
   },
   {
-    title: "跨链 DeFi 聚合协议邀请你加入",
-    description: "项目发起人希望你负责路由监控面板前端开发。",
-    time: "2 小时前",
-    href: "/projects/2",
+    title: "New phase application status available",
+    description: "A project phase application has entered the review queue.",
+    time: "2 hours ago",
+    href: "/projects",
   },
   {
-    title: "医疗影像标注平台收益分成已结算",
-    description: "医疗影像标注平台里程碑 2 已完成，分成 $620 已入账。",
-    time: "昨天",
-    href: "/projects/3",
-  },
-  {
-    title: "测试项目-001 有新协作者申请",
-    description: "新的协作者申请已进入待审核队列。",
-    time: "3 天前",
-    href: "/projects/1",
+    title: "Revenue share plan refreshed",
+    description: "A project's phase share plan has been updated.",
+    time: "Yesterday",
+    href: "/projects",
   },
 ]
 
-const applicationStatusStyles: Record<string, string> = {
-  待审核: "border-amber-500/30 bg-amber-500/12 text-amber-300",
-  已通过: "border-emerald-500/30 bg-emerald-500/12 text-emerald-300",
-  已拒绝: "border-red-500/30 bg-red-500/12 text-red-300",
-}
-
-const projectStatusStyles: Record<string, string> = {
-  招募中: "border-amber-500/30 bg-amber-500/12 text-amber-300",
-  进行中: "border-emerald-500/30 bg-emerald-500/12 text-emerald-300",
-  已结束: "border-white/10 bg-white/5 text-white/55",
-}
-
-const notificationTypeStyles: Record<string, string> = {
-  申请加入: "border-blue-500/30 bg-blue-500/12 text-blue-300",
-  申请通过: "border-emerald-500/30 bg-emerald-500/12 text-emerald-300",
-  申请拒绝: "border-red-500/30 bg-red-500/12 text-red-300",
-  里程碑更新: "border-[#6C63FF]/35 bg-[#6C63FF]/16 text-[#8D87FF]",
-  新评价: "border-orange-500/30 bg-orange-500/12 text-orange-300",
-}
-
-async function markNotificationRead(formData: FormData) {
-  "use server"
-
-  const notificationId = String(formData.get("notificationId") ?? "")
-
-  if (!notificationId) {
-    return
-  }
-
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return
-  }
-
-  await supabase
-    .from("notifications")
-    .update({ is_read: true })
-    .eq("id", notificationId)
-    .eq("user_id", user.id)
-
-  revalidatePath("/dashboard")
-}
-
-async function markAllNotificationsRead() {
-  "use server"
-
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return
-  }
-
-  await supabase
-    .from("notifications")
-    .update({ is_read: true })
-    .eq("user_id", user.id)
-    .eq("is_read", false)
-
-  revalidatePath("/dashboard")
-}
-
 function formatDate(date: string | null) {
   if (!date) {
-    return "刚刚"
+    return "Just now"
   }
 
   return new Intl.DateTimeFormat("zh-CN", {
@@ -187,116 +114,16 @@ function formatDate(date: string | null) {
   }).format(new Date(date))
 }
 
-function getProjectName(projects: ApplicationRow["projects"]) {
-  if (Array.isArray(projects)) {
-    return projects[0]?.name || "未命名项目"
+function statusClass(status: string) {
+  if (status === STATUS_APPROVED) {
+    return "border-emerald-500/30 bg-emerald-500/12 text-emerald-300"
   }
 
-  return projects?.name || "未命名项目"
-}
+  if (status === STATUS_REJECTED) {
+    return "border-red-500/30 bg-red-500/12 text-red-300"
+  }
 
-function NotificationCenter({
-  notifications,
-}: {
-  notifications: NotificationRow[]
-}) {
-  const unreadCount = notifications.filter((item) => !item.is_read).length
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className="relative inline-flex size-11 items-center justify-center rounded-xl border border-white/10 bg-[#10101A] text-[#8D87FF] transition-colors hover:border-[#6C63FF]/50 hover:bg-[#6C63FF]/10"
-          aria-label="通知中心"
-        >
-          <Bell className="size-5" aria-hidden="true" />
-          {unreadCount > 0 ? (
-            <span className="absolute -right-1 -top-1 flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
-              {unreadCount}
-            </span>
-          ) : null}
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        className="w-80 border-white/10 bg-[#10101A] p-0 text-white shadow-2xl shadow-black/30"
-      >
-        <div className="flex items-center justify-between gap-3 px-4 py-3">
-          <DropdownMenuLabel className="p-0 text-base font-bold text-white">
-            通知中心
-          </DropdownMenuLabel>
-          <form action={markAllNotificationsRead}>
-            <button
-              type="submit"
-              className="text-xs font-medium text-[#8D87FF] transition-colors hover:text-white hover:underline"
-            >
-              全部已读
-            </button>
-          </form>
-        </div>
-        <DropdownMenuSeparator className="bg-white/10" />
-        <div className="max-h-96 overflow-y-auto p-2">
-          {notifications.length === 0 ? (
-            <div className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-5 text-center text-sm text-white/45">
-              暂无通知
-            </div>
-          ) : (
-            notifications.map((notification) => {
-              const type = notification.type || "申请加入"
-
-              return (
-                <DropdownMenuItem
-                  key={notification.id}
-                  asChild
-                  className="cursor-pointer rounded-lg p-0 focus:bg-white/[0.06]"
-                >
-                  <form action={markNotificationRead} className="w-full">
-                    <input
-                      type="hidden"
-                      name="notificationId"
-                      value={notification.id}
-                    />
-                    <button
-                      type="submit"
-                      className="flex w-full flex-col gap-2 rounded-lg px-3 py-3 text-left transition-colors hover:bg-white/[0.06]"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <span className="font-semibold text-white">
-                          {notification.title || "系统通知"}
-                        </span>
-                        {!notification.is_read ? (
-                          <span className="mt-1 size-2 rounded-full bg-red-500" />
-                        ) : null}
-                      </div>
-                      <p className="line-clamp-2 text-sm leading-5 text-white/55">
-                        {notification.content || "暂无通知内容"}
-                      </p>
-                      <div className="flex items-center justify-between gap-3">
-                        <span
-                          className={cn(
-                            "rounded-full border px-2 py-0.5 text-[11px] font-medium",
-                            notificationTypeStyles[type] ??
-                              "border-white/10 bg-white/5 text-white/55",
-                          )}
-                        >
-                          {type}
-                        </span>
-                        <span className="text-[11px] text-white/35">
-                          {formatDate(notification.created_at)}
-                          {notification.is_read ? " · 已读" : " · 未读"}
-                        </span>
-                      </div>
-                    </button>
-                  </form>
-                </DropdownMenuItem>
-              )
-            })
-          )}
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
+  return "border-amber-500/30 bg-amber-500/12 text-amber-300"
 }
 
 export default async function DashboardPage() {
@@ -309,11 +136,43 @@ export default async function DashboardPage() {
     redirect("/auth/login")
   }
 
-  const { data: applicationsData } = await supabase
-    .from("project_applications")
-    .select("id, project_id, status, created_at, projects(name)")
+  const { data: phaseApplicationsData } = await supabase
+    .from("phase_applications")
+    .select("id, phase_id, status, created_at")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
+
+  const phaseApplicationRows =
+    (phaseApplicationsData ?? []) as PhaseApplicationRow[]
+  const phaseIds = Array.from(
+    new Set(
+      phaseApplicationRows
+        .map((application) => application.phase_id)
+        .filter((id): id is string | number => Boolean(id)),
+    ),
+  )
+
+  const { data: phasesData } =
+    phaseIds.length > 0
+      ? await supabase
+          .from("project_phases")
+          .select("id, project_id, name")
+          .in("id", phaseIds)
+      : { data: [] }
+  const phaseRows = (phasesData ?? []) as PhaseRow[]
+  const projectIds = Array.from(
+    new Set(
+      phaseRows
+        .map((phase) => phase.project_id)
+        .filter((id): id is string | number => Boolean(id)),
+    ),
+  )
+
+  const { data: projectNamesData } =
+    projectIds.length > 0
+      ? await supabase.from("projects").select("id, name").in("id", projectIds)
+      : { data: [] }
+  const projectNameRows = (projectNamesData ?? []) as ProjectNameRow[]
 
   const { data: publishedProjectsData } = await supabase
     .from("projects")
@@ -321,17 +180,31 @@ export default async function DashboardPage() {
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
 
-  const { data: notificationsData } = await supabase
-    .from("notifications")
-    .select("id, title, content, type, is_read, created_at")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(10)
+  const phaseMap = new Map(phaseRows.map((phase) => [String(phase.id), phase]))
+  const projectMap = new Map(
+    projectNameRows.map((project) => [String(project.id), project]),
+  )
+  const myPhaseApplications: MyPhaseApplication[] = phaseApplicationRows.map(
+    (application) => {
+      const phase = application.phase_id
+        ? phaseMap.get(String(application.phase_id))
+        : undefined
+      const project = phase?.project_id
+        ? projectMap.get(String(phase.project_id))
+        : undefined
 
-  const applications = (applicationsData ?? []) as ApplicationRow[]
+      return {
+        id: application.id,
+        project_id: phase?.project_id ?? null,
+        project_name: project?.name || "Untitled project",
+        phase_name: phase?.name || "Untitled phase",
+        status: application.status || STATUS_PENDING,
+        created_at: application.created_at,
+      }
+    },
+  )
   const publishedProjects =
-    (publishedProjectsData ?? []) as PublishedProjectRow[]
-  const notifications = (notificationsData ?? []) as NotificationRow[]
+    (publishedProjectsData ?? []) as ProjectNameRow[]
   const userEmail = user.email ?? "user@jbgit.dev"
   const displayName =
     typeof user.user_metadata?.name === "string"
@@ -382,16 +255,18 @@ export default async function DashboardPage() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-4xl font-black tracking-normal text-white">
-                仪表盘
+                Dashboard
               </h1>
               <p className="mt-3 text-sm text-white/45">
-                查看你的项目协作、团队动态和收益进展。
+                Track your project collaboration, phase applications, and recent activity.
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <NotificationCenter notifications={notifications} />
+              <div className="flex size-11 items-center justify-center rounded-xl border border-white/10 bg-[#10101A] text-[#8D87FF]">
+                <Bell className="size-5" aria-hidden="true" />
+              </div>
               <div className="rounded-xl border border-white/10 bg-[#10101A] px-4 py-3 text-sm text-white/58">
-                当前用户：
+                Current user:
                 <span className="ml-2 font-medium text-white">{displayName}</span>
               </div>
             </div>
@@ -430,49 +305,37 @@ export default async function DashboardPage() {
           <Card className="mt-6 rounded-xl border-white/10 bg-[#10101A] py-0 text-white shadow-none">
             <CardHeader className="p-6 pb-2">
               <CardTitle className="text-xl font-bold text-white">
-                我发布的项目
+                My Published Projects
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6 pt-4">
               {publishedProjects.length === 0 ? (
                 <div className="rounded-lg border border-white/10 bg-white/[0.03] p-5 text-sm text-white/45">
-                  暂无发布的项目
+                  No published projects
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {publishedProjects.map((project) => {
-                    const status = project.status || "招募中"
-                    const applicationCount =
-                      project.project_applications?.length ?? 0
-
-                    return (
-                      <div
-                        key={project.id}
-                        className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-4 sm:flex-row sm:items-center sm:justify-between"
-                      >
-                        <div className="min-w-0">
-                          <Link
-                            href={`/projects/${project.id}`}
-                            className="font-semibold text-white transition-colors hover:text-[#8D87FF] hover:underline"
-                          >
-                            {project.name || "测试项目-001"}
-                          </Link>
-                          <p className="mt-1 text-xs text-white/35">
-                            申请人数：{applicationCount}
-                          </p>
-                        </div>
-                        <span
-                          className={cn(
-                            "w-fit rounded-full border px-3 py-1 text-xs font-medium",
-                            projectStatusStyles[status] ??
-                              "border-white/10 bg-white/5 text-white/55",
-                          )}
+                  {publishedProjects.map((project) => (
+                    <div
+                      key={project.id}
+                      className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-4 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <Link
+                          href={`/projects/${project.id}`}
+                          className="font-semibold text-white transition-colors hover:text-[#8D87FF] hover:underline"
                         >
-                          {status}
-                        </span>
+                          {project.name || "Untitled project"}
+                        </Link>
+                        <p className="mt-1 text-xs text-white/35">
+                          Applications: {project.project_applications?.length ?? 0}
+                        </p>
                       </div>
-                    )
-                  })}
+                      <span className="w-fit rounded-full border border-amber-500/30 bg-amber-500/12 px-3 py-1 text-xs font-medium text-amber-300">
+                        {project.status || STATUS_RECRUITING}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
             </CardContent>
@@ -481,47 +344,49 @@ export default async function DashboardPage() {
           <Card className="mt-6 rounded-xl border-white/10 bg-[#10101A] py-0 text-white shadow-none">
             <CardHeader className="p-6 pb-2">
               <CardTitle className="text-xl font-bold text-white">
-                我的申请
+                My Applications
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6 pt-4">
-              {applications.length === 0 ? (
+              {myPhaseApplications.length === 0 ? (
                 <div className="rounded-lg border border-white/10 bg-white/[0.03] p-5 text-sm text-white/45">
                   暂无申请记录
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {applications.map((application) => {
-                    const status = application.status || "待审核"
-
-                    return (
-                      <div
-                        key={application.id}
-                        className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-4 sm:flex-row sm:items-center sm:justify-between"
-                      >
-                        <div className="min-w-0">
-                          <Link
-                            href={`/projects/${application.project_id}`}
-                            className="font-semibold text-white transition-colors hover:text-[#8D87FF] hover:underline"
-                          >
-                            {getProjectName(application.projects)}
-                          </Link>
-                          <p className="mt-1 text-xs text-white/35">
-                            申请时间：{formatDate(application.created_at)}
-                          </p>
-                        </div>
-                        <span
-                          className={cn(
-                            "w-fit rounded-full border px-3 py-1 text-xs font-medium",
-                            applicationStatusStyles[status] ??
-                              "border-white/10 bg-white/5 text-white/55",
-                          )}
+                  {myPhaseApplications.map((application) => (
+                    <div
+                      key={application.id}
+                      className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-4 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <Link
+                          href={
+                            application.project_id
+                              ? `/projects/${application.project_id}`
+                              : "/projects"
+                          }
+                          className="font-semibold text-white transition-colors hover:text-[#8D87FF] hover:underline"
                         >
-                          {status}
-                        </span>
+                          {application.project_name}
+                        </Link>
+                        <p className="mt-1 text-xs text-white/35">
+                          工序：{application.phase_name}
+                        </p>
+                        <p className="mt-1 text-xs text-white/35">
+                          申请时间：{formatDate(application.created_at)}
+                        </p>
                       </div>
-                    )
-                  })}
+                      <span
+                        className={cn(
+                          "w-fit rounded-full border px-3 py-1 text-xs font-medium",
+                          statusClass(application.status),
+                        )}
+                      >
+                        {application.status}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
             </CardContent>
@@ -531,7 +396,7 @@ export default async function DashboardPage() {
             <CardHeader className="p-6 pb-2">
               <div className="flex items-center justify-between gap-4">
                 <CardTitle className="text-xl font-bold text-white">
-                  最近活动时间线
+                  Recent Activity
                 </CardTitle>
                 <Bell className="size-5 text-[#8D87FF]" aria-hidden="true" />
               </div>
