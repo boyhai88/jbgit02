@@ -17,6 +17,12 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 
+const STATUS_RECRUITING = "\u62db\u52df\u4e2d"
+const STATUS_FULL = "\u5df2\u6ee1"
+const STATUS_PENDING = "\u5f85\u5ba1\u6838"
+const STATUS_APPROVED = "\u5df2\u901a\u8fc7"
+const STATUS_REJECTED = "\u5df2\u62d2\u7edd"
+
 type Project = {
   id: string
   user_id: string | null
@@ -55,15 +61,15 @@ type Notice = {
 }
 
 const phaseStatusStyles: Record<string, string> = {
-  招募中: "border-emerald-500/40 bg-emerald-500/15 text-emerald-300",
-  已满: "border-blue-500/40 bg-blue-500/15 text-blue-300",
-  进行中: "border-orange-500/40 bg-orange-500/15 text-orange-300",
-  已完成: "border-gray-600 bg-gray-800 text-gray-300",
+  [STATUS_RECRUITING]: "border-emerald-500/40 bg-emerald-500/15 text-emerald-300",
+  [STATUS_FULL]: "border-blue-500/40 bg-blue-500/15 text-blue-300",
+  "\u8fdb\u884c\u4e2d": "border-orange-500/40 bg-orange-500/15 text-orange-300",
+  "\u5df2\u5b8c\u6210": "border-gray-600 bg-gray-800 text-gray-300",
 }
 
 function formatDate(date: string | null) {
   if (!date) {
-    return "未设置"
+    return "Not set"
   }
 
   return new Intl.DateTimeFormat("zh-CN", {
@@ -75,7 +81,7 @@ function formatDate(date: string | null) {
 
 function formatBudget(budget: Project["budget"]) {
   if (budget === null || budget === undefined || budget === "") {
-    return "预算待定"
+    return "TBD"
   }
 
   if (typeof budget === "number") {
@@ -113,7 +119,7 @@ function getCurrentCount(phase: ProjectPhase, applications: PhaseApplication[]) 
   const approvedCount = applications.filter(
     (application) =>
       String(application.phase_id) === String(phase.id) &&
-      application.status === "已通过",
+      application.status === STATUS_APPROVED,
   ).length
 
   return approvedCount || Number(phase.current_count ?? 0)
@@ -182,8 +188,8 @@ export default function ProjectDetailPage() {
       const applicationsWithEmail = applicationRows.map((application) => ({
         ...application,
         applicant_email: application.user_id
-          ? emailMap.get(application.user_id) ?? "未知邮箱"
-          : "未知邮箱",
+          ? emailMap.get(application.user_id) ?? "Unknown email"
+          : "Unknown email",
       }))
 
       if (!mounted) {
@@ -197,7 +203,7 @@ export default function ProjectDetailPage() {
     }
 
     void loadProject().catch((error) => {
-      console.error("项目详情加载失败:", error)
+      console.error("Project detail load failed:", error)
 
       if (!mounted) {
         return
@@ -230,8 +236,8 @@ export default function ProjectDetailPage() {
     if (requiredCount > 0 && currentCount >= requiredCount) {
       setNotice({
         type: "error",
-        title: "工序已满",
-        message: "该工序申请人数已达到招募人数。",
+        title: "Phase is full",
+        message: "This phase has reached the required headcount.",
       })
       return
     }
@@ -245,8 +251,8 @@ export default function ProjectDetailPage() {
     if (hasApplied) {
       setNotice({
         type: "error",
-        title: "已申请",
-        message: "你已经申请过该工序，请勿重复提交。",
+        title: "Already applied",
+        message: "You have already applied for this phase.",
       })
       return
     }
@@ -256,7 +262,7 @@ export default function ProjectDetailPage() {
       project_id: projectId,
       phase_id: phase.id,
       user_id: user.id,
-      status: "待审核",
+      status: STATUS_PENDING,
     })
 
     if (error) {
@@ -265,8 +271,8 @@ export default function ProjectDetailPage() {
 
       setNotice({
         type: "error",
-        title: isDuplicate ? "已申请" : "工序申请失败",
-        message: isDuplicate ? "你已经申请过该工序，请勿重复提交。" : error.message,
+        title: isDuplicate ? "Already applied" : "Phase application failed",
+        message: isDuplicate ? "You have already applied for this phase." : error.message,
       })
       return
     }
@@ -276,7 +282,7 @@ export default function ProjectDetailPage() {
 
   async function handleUpdatePhaseApplication(
     application: PhaseApplication,
-    status: "已通过" | "已拒绝",
+    status: typeof STATUS_APPROVED | typeof STATUS_REJECTED,
   ) {
     if (!user || !project || project.user_id !== user.id) {
       router.push("/auth/login")
@@ -292,27 +298,36 @@ export default function ProjectDetailPage() {
     if (error) {
       setNotice({
         type: "error",
-        title: "工序申请审核失败",
+        title: "Review failed",
         message: error.message,
       })
       return
     }
 
-    if (status === "已通过" && application.phase_id) {
+    if (status === STATUS_APPROVED && application.phase_id) {
       const phase = projectPhases.find(
         (item) => String(item.id) === String(application.phase_id),
       )
       const currentCount = phase ? Number(phase.current_count ?? 0) : 0
+      const headcount = phase ? getHeadcount(phase) : 0
       const nextCount = currentCount + 1
+      const phaseUpdate: { current_count: number; status?: string } = {
+        current_count: nextCount,
+      }
+
+      if (headcount > 0 && nextCount >= headcount) {
+        phaseUpdate.status = STATUS_FULL
+      }
+
       const { error: phaseError } = await supabase
         .from("project_phases")
-        .update({ current_count: nextCount })
+        .update(phaseUpdate)
         .eq("id", application.phase_id)
 
       if (phaseError) {
         setNotice({
           type: "error",
-          title: "工序人数更新失败",
+          title: "Phase count update failed",
           message: phaseError.message,
         })
         return
@@ -325,7 +340,7 @@ export default function ProjectDetailPage() {
   if (loadingProject) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#05050B] px-6 text-white">
-        <p className="text-base text-white/55">正在加载项目...</p>
+        <p className="text-base text-white/55">Loading project...</p>
       </main>
     )
   }
@@ -341,10 +356,10 @@ export default function ProjectDetailPage() {
               "mb-8 border-gray-800 bg-[#10101A] text-white/70 hover:border-[#6C63FF]/50 hover:text-white",
             )}
           >
-            返回项目市场
+            Back to marketplace
           </Link>
           <div className="rounded-2xl border border-gray-800 bg-[#10101A] p-10 text-center text-white/55 shadow-lg">
-            项目不存在
+            Project not found
           </div>
         </section>
       </main>
@@ -361,7 +376,7 @@ export default function ProjectDetailPage() {
             "mb-8 border-gray-800 bg-[#10101A] text-white/70 hover:border-[#6C63FF]/50 hover:text-white",
           )}
         >
-          返回项目市场
+          Back to marketplace
         </Link>
 
         <Card className="rounded-2xl border-gray-800 bg-[#10101A] text-white shadow-lg shadow-black/30">
@@ -369,17 +384,17 @@ export default function ProjectDetailPage() {
             <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <p className="font-mono text-xs text-white/35">
-                  项目ID：{project.id}
+                  Project ID: {project.id}
                 </p>
                 <CardTitle className="mt-4 text-4xl font-black tracking-normal text-white md:text-5xl">
-                  {project.name || "未命名项目"}
+                  {project.name || "Untitled project"}
                 </CardTitle>
                 <CardDescription className="mt-5 max-w-3xl text-lg leading-relaxed text-white/60">
-                  {project.description || "暂无项目描述"}
+                  {project.description || "No project description yet."}
                 </CardDescription>
               </div>
               <span className="w-fit shrink-0 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-4 py-1.5 text-sm font-medium text-emerald-300">
-                {project.status || "招募中"}
+                {project.status || STATUS_RECRUITING}
               </span>
             </div>
           </CardHeader>
@@ -399,14 +414,14 @@ export default function ProjectDetailPage() {
             ) : null}
 
             <section className="rounded-2xl border border-gray-800 bg-black/20 p-6 shadow-md">
-              <h2 className="text-xl font-bold text-white">项目描述</h2>
+              <h2 className="text-xl font-bold text-white">Description</h2>
               <p className="mt-4 whitespace-pre-wrap text-base leading-relaxed text-white/65">
-                {project.description || "暂无项目描述"}
+                {project.description || "No project description yet."}
               </p>
             </section>
 
             <section className="rounded-2xl border border-gray-800 bg-black/20 p-6 shadow-md">
-              <h2 className="text-xl font-bold text-white">技能标签</h2>
+              <h2 className="text-xl font-bold text-white">Skills</h2>
               <div className="mt-4 flex flex-wrap gap-3">
                 {skills.length > 0 ? (
                   skills.map((skill) => (
@@ -418,20 +433,20 @@ export default function ProjectDetailPage() {
                     </span>
                   ))
                 ) : (
-                  <span className="text-base text-white/45">暂无技能标签</span>
+                  <span className="text-base text-white/45">No skills listed</span>
                 )}
               </div>
             </section>
 
             <div className="grid gap-6 sm:grid-cols-2">
               <div className="rounded-2xl border border-gray-800 bg-black/20 p-6 shadow-md">
-                <p className="text-base text-white/45">招募人数</p>
+                <p className="text-base text-white/45">Headcount</p>
                 <p className="mt-3 text-3xl font-bold text-white">
-                  {project.headcount ?? 0} 人
+                  {project.headcount ?? 0}
                 </p>
               </div>
               <div className="rounded-2xl border border-gray-800 bg-black/20 p-6 shadow-md">
-                <p className="text-base text-white/45">项目预算</p>
+                <p className="text-base text-white/45">Budget</p>
                 <p className="mt-3 text-3xl font-bold text-[#6C63FF]">
                   {formatBudget(project.budget)}
                 </p>
@@ -440,15 +455,15 @@ export default function ProjectDetailPage() {
 
             <section className="rounded-2xl border border-gray-800 bg-black/20 p-6 shadow-md">
               <div>
-                <h2 className="text-xl font-bold text-white">项目工序</h2>
+                <h2 className="text-xl font-bold text-white">Project phases</h2>
                 <p className="mt-2 text-base leading-relaxed text-white/45">
-                  按工序查看招募人数、当前申请进度和分成比例
+                  Review phase headcount, application progress, and revenue share.
                 </p>
               </div>
 
               {projectPhases.length === 0 ? (
                 <div className="mt-6 rounded-xl border border-gray-800 bg-white/[0.03] p-5 text-base text-white/45">
-                  暂无工序
+                  No phases yet
                 </div>
               ) : (
                 <div className="mt-6 space-y-4">
@@ -468,7 +483,7 @@ export default function ProjectDetailPage() {
                             application.user_id === user.id,
                         ),
                     )
-                    const phaseStatus = isFull ? "已满" : phase.status || "招募中"
+                    const phaseStatus = isFull ? STATUS_FULL : phase.status || STATUS_RECRUITING
 
                     return (
                       <div
@@ -478,13 +493,13 @@ export default function ProjectDetailPage() {
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                           <div>
                             <h3 className="text-lg font-semibold text-white">
-                              {phase.name || "未命名工序"}
+                              {phase.name || "Untitled phase"}
                             </h3>
                             <div className="mt-3 flex flex-wrap gap-3 text-sm text-white/55">
-                              <span>招募人数：{requiredCount} 人</span>
-                              <span>当前人数：{currentCount} 人</span>
+                              <span>Required: {requiredCount}</span>
+                              <span>Current: {currentCount}</span>
                               <span className="font-mono text-[#8D87FF]">
-                                分成比例：{phase.share_percent ?? 0}%
+                                Share: {phase.share_percent ?? 0}%
                               </span>
                             </div>
                           </div>
@@ -502,7 +517,7 @@ export default function ProjectDetailPage() {
                         <div className="mt-5">
                           <div className="mb-2 flex items-center justify-between text-xs text-white/40">
                             <span>
-                              已满人数 / 总需求人数：{currentCount}/{requiredCount}
+                              Filled / required: {currentCount}/{requiredCount}
                             </span>
                             <span>{progress}%</span>
                           </div>
@@ -525,7 +540,7 @@ export default function ProjectDetailPage() {
                                 : "bg-[#6C63FF] text-white hover:bg-[#5B54E8]"
                             }
                           >
-                            {isFull ? "已满" : hasApplied ? "已申请" : "申请加入"}
+                            {isFull ? "Full" : hasApplied ? "Applied" : "Apply"}
                           </Button>
                         </div>
                       </div>
@@ -538,35 +553,35 @@ export default function ProjectDetailPage() {
             <section className="rounded-2xl border border-gray-800 bg-black/20 p-6 shadow-md">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h2 className="text-xl font-bold text-white">工序申请人列表</h2>
+                  <h2 className="text-xl font-bold text-white">Phase applicants</h2>
                   <p className="mt-2 text-base leading-relaxed text-white/45">
-                    只显示当前项目工序对应的申请记录
+                    Only applications related to this project's phases are shown.
                   </p>
                 </div>
                 {isProjectOwner ? (
                   <span className="rounded-full border border-[#6C63FF]/30 bg-[#6C63FF]/15 px-3 py-1 text-xs text-[#8D87FF]">
-                    项目所有者可审核
+                    Owner review enabled
                   </span>
                 ) : null}
               </div>
 
               {phaseApplications.length === 0 ? (
                 <div className="mt-6 rounded-xl border border-gray-800 bg-white/[0.03] p-5 text-base text-white/45">
-                  暂无工序申请人
+                  No phase applications yet
                 </div>
               ) : (
                 <div className="mt-6 space-y-4">
                   {phaseApplications.map((application) => {
-                    const applicationStatus = application.status || "待审核"
+                    const applicationStatus = application.status || STATUS_PENDING
                     const phaseName =
                       projectPhases.find(
                         (phase) =>
                           String(phase.id) === String(application.phase_id),
-                      )?.name ?? "未知工序"
+                      )?.name ?? "Unknown phase"
                     const statusClass =
-                      applicationStatus === "已通过"
+                      applicationStatus === STATUS_APPROVED
                         ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
-                        : applicationStatus === "已拒绝"
+                        : applicationStatus === STATUS_REJECTED
                           ? "border-red-500/40 bg-red-500/15 text-red-300"
                           : "border-amber-500/40 bg-amber-500/15 text-amber-300"
 
@@ -577,13 +592,13 @@ export default function ProjectDetailPage() {
                       >
                         <div>
                           <p className="font-semibold text-white">
-                            {application.applicant_email || "未知邮箱"}
+                            {application.applicant_email || "Unknown email"}
                           </p>
                           <p className="mt-2 text-sm text-white/45">
-                            申请工序：{phaseName}
+                            Phase: {phaseName}
                           </p>
                           <p className="mt-1 text-sm text-white/35">
-                            申请时间：{formatDate(application.created_at)}
+                            Applied: {formatDate(application.created_at)}
                           </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-3">
@@ -599,30 +614,30 @@ export default function ProjectDetailPage() {
                             <>
                               <Button
                                 type="button"
-                                disabled={applicationStatus === "已通过"}
+                                disabled={applicationStatus === STATUS_APPROVED}
                                 onClick={() =>
                                   void handleUpdatePhaseApplication(
                                     application,
-                                    "已通过",
+                                    STATUS_APPROVED,
                                   )
                                 }
                                 className="bg-[#6C63FF] text-white hover:bg-[#5B54E8]"
                               >
-                                通过
+                                Approve
                               </Button>
                               <Button
                                 type="button"
-                                disabled={applicationStatus === "已拒绝"}
+                                disabled={applicationStatus === STATUS_REJECTED}
                                 onClick={() =>
                                   void handleUpdatePhaseApplication(
                                     application,
-                                    "已拒绝",
+                                    STATUS_REJECTED,
                                   )
                                 }
                                 variant="outline"
                                 className="border-red-500/40 bg-transparent text-red-200 hover:bg-red-500/10 hover:text-red-100"
                               >
-                                拒绝
+                                Reject
                               </Button>
                             </>
                           ) : null}
