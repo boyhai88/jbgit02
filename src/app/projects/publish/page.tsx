@@ -232,6 +232,7 @@ export default function PublishProjectPage() {
         return
       }
 
+      console.log("当前 phases 数据:", JSON.stringify(phases, null, 2))
       console.log("准备插入工序:", cleanedPhases)
 
       const { error: phaseError } = await supabase.from("project_phases").insert(
@@ -253,7 +254,8 @@ export default function PublishProjectPage() {
         setNotice({
           type: "error",
           title: "工序保存失败",
-          message: phaseError.message,
+          message:
+            phaseError.message + " | 工序数据: " + JSON.stringify(cleanedPhases),
         })
         return
       }
