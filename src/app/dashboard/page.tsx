@@ -17,10 +17,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { createClient } from "@/lib/supabase/server"
 import { cn } from "@/lib/utils"
 
-const STATUS_PENDING = "\u5f85\u5ba1\u6838"
-const STATUS_APPROVED = "\u5df2\u901a\u8fc7"
-const STATUS_REJECTED = "\u5df2\u62d2\u7edd"
-const STATUS_RECRUITING = "\u62db\u52df\u4e2d"
+const STATUS_PENDING = "待审核"
+const STATUS_APPROVED = "已通过"
+const STATUS_REJECTED = "已拒绝"
+const STATUS_RECRUITING = "招募中"
 
 type NestedProject = {
   id: string | number
@@ -67,51 +67,51 @@ type MyPhaseApplication = {
 }
 
 const sidebarItems = [
-  { label: "\u6982\u89c8", href: "/dashboard", icon: BriefcaseBusiness, active: true },
-  { label: "\u6211\u7684\u9879\u76ee", href: "/projects", icon: FolderKanban },
-  { label: "\u53c2\u4e0e\u7684\u56e2\u961f", href: "/projects", icon: UsersRound },
-  { label: "\u6536\u76ca\u8bb0\u5f55", href: "/dashboard/earnings", icon: CircleDollarSign },
-  { label: "\u8d26\u6237\u8bbe\u7f6e", href: "/profile", icon: Settings },
+  { label: "概览", href: "/dashboard", icon: BriefcaseBusiness, active: true },
+  { label: "我的项目", href: "/projects", icon: FolderKanban },
+  { label: "参与的团队", href: "/projects", icon: UsersRound },
+  { label: "收益记录", href: "/dashboard/earnings", icon: CircleDollarSign },
+  { label: "账户设置", href: "/profile", icon: Settings },
 ]
 
 const stats = [
   {
-    label: "\u53c2\u4e0e\u9879\u76ee\u6570",
+    label: "参与项目数",
     value: "6",
-    helper: "3 \u4e2a\u8fdb\u884c\u4e2d",
+    helper: "3 个进行中",
     icon: FolderKanban,
   },
   {
-    label: "\u534f\u4f5c\u5b8c\u6210\u7387",
+    label: "协作完成率",
     value: "92%",
-    helper: "\u9ad8\u4e8e\u5e73\u53f0\u5e73\u5747\u6c34\u5e73",
+    helper: "高于平台平均水平",
     icon: CheckCircle2,
   },
   {
-    label: "\u534f\u4f5c\u8005\u6570",
+    label: "协作者数",
     value: "18",
-    helper: "\u672c\u6708\u65b0\u589e 4 \u4eba",
+    helper: "本月新增 4 人",
     icon: UsersRound,
   },
 ]
 
 const activities = [
   {
-    title: "AI \u4ee3\u7801\u5ba1\u67e5\u52a9\u624b\u5df2\u66f4\u65b0",
-    description: "\u9879\u76ee\u53d1\u8d77\u4eba\u5df2\u67e5\u770b\u6700\u65b0\u534f\u4f5c\u8fdb\u5ea6\u3002",
-    time: "15 \u5206\u949f\u524d",
+    title: "AI 代码审查助手已更新",
+    description: "项目发起人已查看最新协作进度。",
+    time: "15 分钟前",
     href: "/projects/1",
   },
   {
-    title: "\u5de5\u5e8f\u7533\u8bf7\u72b6\u6001\u6709\u66f4\u65b0",
-    description: "\u4e00\u4e2a\u9879\u76ee\u5de5\u5e8f\u7533\u8bf7\u5df2\u8fdb\u5165\u5ba1\u6838\u961f\u5217\u3002",
-    time: "2 \u5c0f\u65f6\u524d",
+    title: "工序申请状态有更新",
+    description: "一个项目工序申请已进入审核队列。",
+    time: "2 小时前",
     href: "/projects",
   },
   {
-    title: "\u6536\u76ca\u5206\u914d\u65b9\u6848\u5df2\u5237\u65b0",
-    description: "\u9879\u76ee\u7684\u5de5\u5e8f\u5206\u6210\u65b9\u6848\u5df2\u66f4\u65b0\u3002",
-    time: "\u6628\u5929",
+    title: "收益分配方案已刷新",
+    description: "项目的工序分成方案已更新。",
+    time: "昨天",
     href: "/projects",
   },
 ]
@@ -166,7 +166,7 @@ async function markAllNotificationsRead() {
 
 function formatDate(date: string | null) {
   if (!date) {
-    return "\u521a\u521a"
+    return "刚刚"
   }
 
   return new Intl.DateTimeFormat("zh-CN", {
@@ -237,8 +237,8 @@ export default async function DashboardPage() {
       return {
         id: application.id,
         project_id: phase?.project_id ?? null,
-        project_name: project?.name || "\u672a\u547d\u540d\u9879\u76ee",
-        phase_name: phase?.name || "\u672a\u547d\u540d\u5de5\u5e8f",
+        project_name: project?.name || "未命名项目",
+        phase_name: phase?.name || "未命名工序",
         status: application.status || STATUS_PENDING,
         created_at: application.created_at,
       }
@@ -300,7 +300,7 @@ export default async function DashboardPage() {
                 仪表盘
               </h1>
               <p className="mt-3 text-sm text-white/45">
-                \u67e5\u770b\u9879\u76ee\u534f\u4f5c\u3001\u5de5\u5e8f\u7533\u8bf7\u4e0e\u6700\u8fd1\u6d3b\u52a8\u3002
+                查看项目协作、工序申请与最近活动。
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -317,12 +317,12 @@ export default async function DashboardPage() {
                   <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
                     <div>
                       <p className="text-sm font-semibold text-white">
-                        \u901a\u77e5\u4e2d\u5fc3
+                        通知中心
                       </p>
                       <p className="mt-1 text-xs text-white/40">
                         {unreadCount > 0
-                          ? `${unreadCount} \u6761\u672a\u8bfb`
-                          : "\u5168\u90e8\u5df2\u8bfb"}
+                          ? `${unreadCount} 条未读`
+                          : "全部已读"}
                       </p>
                     </div>
                     <form action={markAllNotificationsRead}>
@@ -330,14 +330,14 @@ export default async function DashboardPage() {
                         type="submit"
                         className="rounded-lg border border-[#6C63FF]/50 px-3 py-1.5 text-xs font-medium text-[#B8B4FF] transition hover:bg-[#6C63FF] hover:text-white"
                       >
-                        \u5168\u90e8\u5df2\u8bfb
+                        全部已读
                       </button>
                     </form>
                   </div>
                   <div className="max-h-80 overflow-y-auto p-2">
                     {notifications.length === 0 ? (
                       <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/45">
-                        \u6682\u65e0\u901a\u77e5
+                        暂无通知
                       </div>
                     ) : (
                       <div className="space-y-2">
@@ -357,7 +357,7 @@ export default async function DashboardPage() {
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <p className="text-sm font-semibold text-white">
-                                  {notification.title || "\u65b0\u901a\u77e5"}
+                                  {notification.title || "新通知"}
                                 </p>
                                 <span
                                   className={cn(
@@ -368,12 +368,12 @@ export default async function DashboardPage() {
                                   )}
                                 >
                                   {notification.is_read
-                                    ? "\u5df2\u8bfb"
-                                    : "\u672a\u8bfb"}
+                                    ? "已读"
+                                    : "未读"}
                                 </span>
                               </div>
                               <p className="mt-2 text-xs leading-5 text-white/55">
-                                {notification.content || "\u6682\u65e0\u5185\u5bb9"}
+                                {notification.content || "暂无内容"}
                               </p>
                               <p className="mt-2 text-[11px] text-white/30">
                                 {formatDate(notification.created_at)}
@@ -435,7 +435,7 @@ export default async function DashboardPage() {
             <CardContent className="p-6 pt-4">
               {publishedProjects.length === 0 ? (
                 <div className="rounded-lg border border-white/10 bg-white/[0.03] p-5 text-sm text-white/45">
-                  \u6682\u65e0\u53d1\u5e03\u7684\u9879\u76ee
+                  暂无发布的项目
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -450,7 +450,7 @@ export default async function DashboardPage() {
                           prefetch={true}
                           className="font-semibold text-white transition-colors hover:text-[#8D87FF] hover:underline"
                         >
-                          {project.name || "\u672a\u547d\u540d\u9879\u76ee"}
+                          {project.name || "未命名项目"}
                         </Link>
                         <p className="mt-1 text-xs text-white/35">
                           申请数：{project.project_applications?.length ?? 0}
@@ -469,13 +469,13 @@ export default async function DashboardPage() {
           <Card className="mt-6 rounded-xl border-white/10 bg-[#10101A] py-0 text-white shadow-none">
             <CardHeader className="p-6 pb-2">
               <CardTitle className="text-xl font-bold text-white">
-                \u6211\u7684\u7533\u8bf7
+                我的申请
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6 pt-4">
               {myPhaseApplications.length === 0 ? (
                 <div className="rounded-lg border border-white/10 bg-white/[0.03] p-5 text-sm text-white/45">
-                  \u6682\u65e0\u7533\u8bf7\u8bb0\u5f55
+                  暂无申请记录
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -497,10 +497,10 @@ export default async function DashboardPage() {
                           {application.project_name}
                         </Link>
                         <p className="mt-1 text-xs text-white/35">
-                          \u5de5\u5e8f\uff1a{application.phase_name}
+                          工序：{application.phase_name}
                         </p>
                         <p className="mt-1 text-xs text-white/35">
-                          \u7533\u8bf7\u65f6\u95f4\uff1a{formatDate(application.created_at)}
+                          申请时间：{formatDate(application.created_at)}
                         </p>
                       </div>
                       <span
@@ -522,7 +522,7 @@ export default async function DashboardPage() {
             <CardHeader className="p-6 pb-2">
               <div className="flex items-center justify-between gap-4">
                 <CardTitle className="text-xl font-bold text-white">
-                  \u6700\u8fd1\u6d3b\u52a8
+                  最近活动
                 </CardTitle>
                 <Bell className="size-5 text-[#8D87FF]" aria-hidden="true" />
               </div>
