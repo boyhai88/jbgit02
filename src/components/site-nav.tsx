@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils"
 const navItems = [
   { href: "/", label: "首页" },
   { href: "/projects", label: "项目市场" },
+  { href: "/skills/valuation", label: "技能估值" },
   { href: "/invite", label: "邀请" },
   { href: "/dashboard", label: "仪表盘" },
 ] as const
