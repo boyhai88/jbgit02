@@ -31,6 +31,17 @@ const skillOptions = [
   "Web3",
 ]
 
+const budgetOptions = [
+  "5000",
+  "10000",
+  "15000",
+  "20000",
+  "30000",
+  "50000",
+  "80000",
+  "100000",
+]
+
 type PhaseRow = {
   id: number
   name: string
@@ -53,7 +64,7 @@ export default function PublishProjectPage() {
   const { loading, user } = useAuth()
   const [projectName, setProjectName] = useState("")
   const [description, setDescription] = useState("")
-  const [budget, setBudget] = useState("")
+  const [budget, setBudget] = useState(budgetOptions[0])
   const [selectedSkills, setSelectedSkills] = useState<string[]>([])
   const [phases, setPhases] = useState<PhaseRow[]>([
     { id: 1, name: "", headcount: "1", sharePercent: "100" },
@@ -106,6 +117,18 @@ export default function PublishProjectPage() {
 
   function removePhase(id: number) {
     setPhases((current) => current.filter((phase) => phase.id !== id))
+  }
+
+  function generateDescription() {
+    const name = projectName.trim() || "这个项目"
+    const skillText =
+      selectedSkills.length > 0
+        ? selectedSkills.join("、")
+        : "前端、后端、AI/ML 等相关技术"
+
+    setDescription(
+      `${name}旨在为目标用户提供稳定、高效且易于协作的产品能力。项目需要围绕核心需求完成方案设计、功能开发、测试验收与上线交付，并通过清晰的工序拆分提升团队协作效率。期望参与者具备${skillText}经验，能够主动沟通、按阶段交付成果，并共同推动项目达到可持续迭代的质量标准。`,
+    )
   }
 
   function validateForm() {
@@ -170,71 +193,87 @@ export default function PublishProjectPage() {
       return
     }
 
-    setSubmitting(true)
-    setNotice(null)
+    try {
+      setSubmitting(true)
+      setNotice(null)
 
-    const supabase = createClient()
-    const cleanedPhases = phases.map((phase) => ({
-      name: phase.name.trim(),
-      headcount: Number(phase.headcount),
-      share_percent: Number(phase.sharePercent),
-    }))
+      const supabase = createClient()
+      const cleanedPhases = phases.map((phase) => ({
+        name: phase.name.trim(),
+        headcount: Number(phase.headcount),
+        share_percent: Number(phase.sharePercent),
+      }))
 
-    const { data: project, error: projectError } = await supabase
-      .from("projects")
-      .insert({
-        name: projectName.trim(),
-        description: description.trim(),
-        budget: Number(budget),
-        skills: selectedSkills,
-        headcount: cleanedPhases.reduce(
-          (total, phase) => total + phase.headcount,
-          0,
-        ),
-        status: "招募中",
-        user_id: user.id,
+      const { data: project, error: projectError } = await supabase
+        .from("projects")
+        .insert({
+          name: projectName.trim(),
+          description: description.trim(),
+          budget: Number(budget),
+          skills: selectedSkills,
+          headcount: cleanedPhases.reduce(
+            (total, phase) => total + phase.headcount,
+            0,
+          ),
+          status: "招募中",
+          user_id: user.id,
+        })
+        .select("id")
+        .single()
+
+      if (projectError || !project) {
+        console.error("项目插入失败:", projectError)
+        setSubmitting(false)
+        setNotice({
+          type: "error",
+          title: "项目发布失败",
+          message: projectError?.message ?? "未能创建项目，请稍后重试。",
+        })
+        return
+      }
+
+      console.log("准备插入工序:", cleanedPhases)
+
+      const { error: phaseError } = await supabase.from("project_phases").insert(
+        cleanedPhases.map((phase, index) => ({
+          project_id: project.id,
+          name: phase.name,
+          headcount: phase.headcount,
+          share_percent: phase.share_percent,
+          status: "招募中",
+          sort_order: index + 1,
+        })),
+      )
+
+      console.log("插入结果:", { phaseError })
+
+      if (phaseError) {
+        console.error("工序插入失败:", phaseError)
+        setSubmitting(false)
+        setNotice({
+          type: "error",
+          title: "工序保存失败",
+          message: phaseError.message,
+        })
+        return
+      }
+
+      setNotice({
+        type: "success",
+        title: "项目发布成功！",
+        message: "正在跳转到项目市场。",
       })
-      .select("id")
-      .single()
-
-    if (projectError || !project) {
+      router.push("/projects")
+      router.refresh()
+    } catch (error) {
+      console.error("发布项目异常:", error)
       setSubmitting(false)
       setNotice({
         type: "error",
         title: "项目发布失败",
-        message: projectError?.message ?? "未能创建项目，请稍后重试。",
+        message: error instanceof Error ? error.message : String(error),
       })
-      return
     }
-
-    const { error: phaseError } = await supabase.from("project_phases").insert(
-      cleanedPhases.map((phase, index) => ({
-        project_id: project.id,
-        name: phase.name,
-        headcount: phase.headcount,
-        share_percent: phase.share_percent,
-        status: "招募中",
-        sort_order: index + 1,
-      })),
-    )
-
-    if (phaseError) {
-      setSubmitting(false)
-      setNotice({
-        type: "error",
-        title: "工序保存失败",
-        message: phaseError.message,
-      })
-      return
-    }
-
-    setNotice({
-      type: "success",
-      title: "项目发布成功！",
-      message: "正在跳转到项目市场。",
-    })
-    router.push("/projects")
-    router.refresh()
   }
 
   if (loading) {
@@ -299,9 +338,19 @@ export default function PublishProjectPage() {
 
               <div className="grid gap-2">
                 <div className="flex items-center justify-between gap-4">
-                  <Label htmlFor="project-description" className="text-white">
-                    项目描述
-                  </Label>
+                  <div className="flex items-center gap-3">
+                    <Label htmlFor="project-description" className="text-white">
+                      项目描述
+                    </Label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={generateDescription}
+                      className="h-8 bg-[#6C63FF] px-3 text-xs text-white hover:bg-[#5B54E8]"
+                    >
+                      🤖 AI生成
+                    </Button>
+                  </div>
                   <span className="text-xs text-white/40">
                     {descriptionLength}/50
                   </span>
@@ -319,15 +368,18 @@ export default function PublishProjectPage() {
                 <Label htmlFor="project-budget" className="text-white">
                   项目预算
                 </Label>
-                <Input
+                <select
                   id="project-budget"
-                  type="number"
-                  min="1"
                   value={budget}
                   onChange={(event) => setBudget(event.target.value)}
-                  placeholder="例如：8000"
-                  className="h-11 border-white/10 bg-black/30 text-white placeholder:text-white/35"
-                />
+                  className="h-11 rounded-md border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-[#6C63FF] focus:ring-2 focus:ring-[#6C63FF]/20"
+                >
+                  {budgetOptions.map((option) => (
+                    <option key={option} value={option} className="bg-[#10101A]">
+                      {Number(option).toLocaleString()}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="space-y-3">
