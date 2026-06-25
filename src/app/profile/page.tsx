@@ -1,15 +1,18 @@
 import {
   Award,
   Bell,
+  Code2,
   CreditCard,
   KeyRound,
   Mail,
   Medal,
+  Save,
   ShieldCheck,
   Star,
   Trophy,
   UserRound,
 } from "lucide-react"
+import { revalidatePath } from "next/cache"
 import Link from "next/link"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -25,6 +28,28 @@ import { createClient } from "@/lib/supabase/server"
 import { cn } from "@/lib/utils"
 
 type Metadata = Record<string, unknown>
+
+type ProfileRow = {
+  skills?: string[] | string | null
+}
+
+const presetSkills = [
+  "React",
+  "TypeScript",
+  "Python",
+  "Rust",
+  "Solidity",
+  "AI/ML",
+  "DevOps",
+  "Next.js",
+  "Node.js",
+  "Web3",
+  "Go",
+  "Java",
+  "C++",
+  "Vue",
+  "Angular",
+]
 
 const joinedProjects = [
   {
@@ -73,12 +98,31 @@ const settings = [
   },
 ]
 
-const defaultBadges = [
-  "可信协作者",
-  "快速响应",
-  "高质量交付",
-  "项目推进者",
-]
+const defaultBadges = ["可信协作者", "快速响应", "高质量交付", "项目推进者"]
+
+async function updateSkills(formData: FormData) {
+  "use server"
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return
+  }
+
+  const selectedSkills = formData
+    .getAll("skills")
+    .map(String)
+    .filter((skill) => presetSkills.includes(skill))
+
+  await supabase
+    .from("profiles")
+    .upsert({ id: user.id, skills: selectedSkills }, { onConflict: "id" })
+
+  revalidatePath("/profile")
+}
 
 function getMetadataString(metadata: Metadata, keys: string[]) {
   for (const key of keys) {
@@ -122,6 +166,26 @@ function getMetadataBadges(metadata: Metadata) {
   return defaultBadges
 }
 
+function getSkills(skills: ProfileRow["skills"]) {
+  if (Array.isArray(skills)) {
+    return skills.map(String).filter(Boolean)
+  }
+
+  if (typeof skills === "string") {
+    try {
+      const parsed = JSON.parse(skills)
+      return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [skills]
+    } catch {
+      return skills
+        .split(",")
+        .map((skill) => skill.trim())
+        .filter(Boolean)
+    }
+  }
+
+  return []
+}
+
 function getReputationLevel(reputation: number) {
   if (reputation > 1000) {
     return "钻石"
@@ -152,6 +216,14 @@ export default async function ProfilePage() {
     data: { user },
   } = await supabase.auth.getUser()
 
+  const { data: profile } = user
+    ? await supabase
+        .from("profiles")
+        .select("skills")
+        .eq("id", user.id)
+        .maybeSingle()
+    : { data: null }
+
   const metadata = (user?.user_metadata ?? {}) as Metadata
   const email = user?.email ?? "未登录"
   const displayName =
@@ -164,6 +236,7 @@ export default async function ProfilePage() {
     : 0
   const reputationLevel = getReputationLevel(reputation)
   const badges = user ? getMetadataBadges(metadata) : []
+  const skills = getSkills((profile as ProfileRow | null)?.skills)
   const initial = getInitial(displayName, user?.email ?? "")
 
   return (
@@ -288,6 +361,48 @@ export default async function ProfilePage() {
         <div className="grid gap-6">
           <Card className="rounded-xl border-white/10 bg-[#10101A] py-0 text-white shadow-none">
             <CardHeader className="p-6 pb-3">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-xl font-bold text-white">
+                    <Code2 className="size-5 text-[#8D87FF]" aria-hidden="true" />
+                    技能标签管理
+                  </CardTitle>
+                  <CardDescription className="mt-1 text-white/45">
+                    维护你的技术栈标签，用于项目匹配和智能推荐
+                  </CardDescription>
+                </div>
+                {user ? (
+                  <a
+                    href="#edit-skills"
+                    className="inline-flex h-10 items-center justify-center rounded-lg border border-[#6C63FF] px-4 text-sm font-medium text-[#B8B4FF] transition hover:bg-[#6C63FF] hover:text-white"
+                  >
+                    编辑技能
+                  </a>
+                ) : null}
+              </div>
+            </CardHeader>
+            <CardContent className="p-6 pt-2">
+              {skills.length === 0 ? (
+                <div className="rounded-lg border border-white/10 bg-white/[0.03] p-5 text-sm text-white/45">
+                  暂无技能标签，添加后可提升项目推荐匹配度。
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {skills.map((skill) => (
+                    <span
+                      key={skill}
+                      className="rounded-full bg-[#6C63FF]/20 px-3 py-1.5 text-sm text-[#B8B4FF]"
+                    >
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-xl border-white/10 bg-[#10101A] py-0 text-white shadow-none">
+            <CardHeader className="p-6 pb-3">
               <CardTitle className="flex items-center gap-2 text-xl font-bold text-white">
                 <UserRound className="size-5 text-[#8D87FF]" aria-hidden="true" />
                 参与的项目
@@ -358,6 +473,64 @@ export default async function ProfilePage() {
           </Card>
         </div>
       </section>
+
+      <div
+        id="edit-skills"
+        className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6 opacity-0 transition target:pointer-events-auto target:opacity-100"
+      >
+        <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-[#10101A] p-6 shadow-2xl">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-bold text-white">编辑技能</h2>
+              <p className="mt-2 text-sm text-white/45">
+                选择与你当前能力匹配的技能标签，可多选。
+              </p>
+            </div>
+            <a
+              href="#"
+              className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-white/60 transition hover:text-white"
+            >
+              关闭
+            </a>
+          </div>
+
+          <form action={updateSkills} className="mt-6">
+            <div className="grid gap-3 sm:grid-cols-3">
+              {presetSkills.map((skill) => (
+                <label
+                  key={skill}
+                  className="flex cursor-pointer items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white/75 transition hover:border-[#6C63FF]/45 hover:bg-[#6C63FF]/10"
+                >
+                  <input
+                    type="checkbox"
+                    name="skills"
+                    value={skill}
+                    defaultChecked={skills.includes(skill)}
+                    className="size-4 accent-[#6C63FF]"
+                  />
+                  {skill}
+                </label>
+              ))}
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <a
+                href="#"
+                className="inline-flex h-10 items-center justify-center rounded-lg border border-white/10 px-4 text-sm text-white/65 transition hover:text-white"
+              >
+                取消
+              </a>
+              <button
+                type="submit"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#6C63FF] px-4 text-sm font-medium text-white transition hover:bg-[#5B54E8]"
+              >
+                <Save className="size-4" aria-hidden="true" />
+                保存技能
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
     </main>
   )
 }
