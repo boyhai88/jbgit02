@@ -138,6 +138,14 @@ export default function ProjectDetailPage() {
 
   const isProjectOwner = Boolean(user && project?.user_id === user.id)
   const skills = useMemo(() => normalizeSkills(project?.skills ?? null), [project])
+  const phaseShareTotal = useMemo(
+    () =>
+      projectPhases.reduce(
+        (total, phase) => total + (Number(phase.share_percent) || 0),
+        0,
+      ),
+    [projectPhases],
+  )
 
   useEffect(() => {
     let mounted = true
@@ -645,6 +653,57 @@ export default function ProjectDetailPage() {
                       </div>
                     )
                   })}
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-2xl border border-gray-800 bg-black/20 p-6 shadow-md">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-white">
+                    {"\u6536\u76ca\u5206\u914d"}
+                  </h2>
+                  <p className="mt-2 text-base leading-relaxed text-white/45">
+                    {"\u6309\u5de5\u5e8f\u5c55\u793a\u5f53\u524d\u9879\u76ee\u7684\u5206\u6210\u6bd4\u4f8b"}
+                  </p>
+                </div>
+                <div className="rounded-full border border-[#6C63FF]/30 bg-[#6C63FF]/15 px-4 py-2 text-sm font-semibold text-[#8D87FF]">
+                  {"\u603b\u5206\u6210"}: {phaseShareTotal}%
+                </div>
+              </div>
+
+              {phaseShareTotal !== 100 ? (
+                <Alert className="mt-6 border-amber-500/40 bg-amber-500/10 text-amber-100">
+                  <AlertTitle>{"\u5206\u6210\u6bd4\u4f8b\u5f02\u5e38"}</AlertTitle>
+                  <AlertDescription>
+                    {"\u5f53\u524d\u6240\u6709\u5de5\u5e8f\u5206\u6210\u6bd4\u4f8b\u603b\u548c\u4e3a"}{" "}
+                    {phaseShareTotal}
+                    {"%\uff0c\u9700\u8981\u7b49\u4e8e100%\u3002"}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
+              {projectPhases.length === 0 ? (
+                <div className="mt-6 rounded-xl border border-gray-800 bg-white/[0.03] p-5 text-base text-white/45">
+                  {"\u6682\u65e0\u5de5\u5e8f\u5206\u6210\u6570\u636e"}
+                </div>
+              ) : (
+                <div className="mt-6 overflow-hidden rounded-xl border border-gray-800">
+                  <div className="grid grid-cols-2 bg-white/[0.04] px-5 py-4 text-sm font-semibold text-white/45">
+                    <span>{"\u5de5\u5e8f\u540d\u79f0"}</span>
+                    <span className="text-right">{"\u5206\u6210\u6bd4\u4f8b"}</span>
+                  </div>
+                  {projectPhases.map((phase) => (
+                    <div
+                      key={phase.id}
+                      className="grid grid-cols-2 border-t border-gray-800 px-5 py-4 text-base text-white/70"
+                    >
+                      <span>{phase.name || "Untitled phase"}</span>
+                      <span className="text-right font-mono text-[#8D87FF]">
+                        {Number(phase.share_percent ?? 0)}%
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
             </section>
