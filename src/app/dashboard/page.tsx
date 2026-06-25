@@ -16,22 +16,29 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { createClient } from "@/lib/supabase/server"
 import { cn } from "@/lib/utils"
 
-const STATUS_PENDING = "\u5f85\u5ba1\u6838"
-const STATUS_APPROVED = "\u5df2\u901a\u8fc7"
-const STATUS_REJECTED = "\u5df2\u62d2\u7edd"
-const STATUS_RECRUITING = "\u62db\u52df\u4e2d"
+const STATUS_PENDING = "待审核"
+const STATUS_APPROVED = "已通过"
+const STATUS_REJECTED = "已拒绝"
+const STATUS_RECRUITING = "招募中"
+
+type NestedProject = {
+  id: string | number
+  name: string | null
+}
+
+type NestedPhase = {
+  id: string | number
+  project_id: string | number | null
+  name: string | null
+  projects?: NestedProject | NestedProject[] | null
+}
 
 type PhaseApplicationRow = {
   id: string | number
   phase_id: string | number | null
   status: string | null
   created_at: string | null
-}
-
-type PhaseRow = {
-  id: string | number
-  project_id: string | number | null
-  name: string | null
+  project_phases?: NestedPhase | NestedPhase[] | null
 }
 
 type ProjectNameRow = {
@@ -51,58 +58,58 @@ type MyPhaseApplication = {
 }
 
 const sidebarItems = [
-  { label: "Overview", href: "/dashboard", icon: BriefcaseBusiness, active: true },
-  { label: "My Projects", href: "/projects", icon: FolderKanban },
-  { label: "Teams", href: "/projects", icon: UsersRound },
-  { label: "Earnings", href: "/dashboard/earnings", icon: CircleDollarSign },
-  { label: "Settings", href: "/profile", icon: Settings },
+  { label: "概览", href: "/dashboard", icon: BriefcaseBusiness, active: true },
+  { label: "我的项目", href: "/projects", icon: FolderKanban },
+  { label: "参与的团队", href: "/projects", icon: UsersRound },
+  { label: "收益记录", href: "/dashboard/earnings", icon: CircleDollarSign },
+  { label: "账户设置", href: "/profile", icon: Settings },
 ]
 
 const stats = [
   {
-    label: "Participating projects",
+    label: "参与项目数",
     value: "6",
-    helper: "3 active",
+    helper: "3 个进行中",
     icon: FolderKanban,
   },
   {
-    label: "Completion rate",
+    label: "协作完成率",
     value: "92%",
-    helper: "Above platform average",
+    helper: "高于平台平均水平",
     icon: CheckCircle2,
   },
   {
-    label: "Collaborators",
+    label: "协作者数",
     value: "18",
-    helper: "+4 this month",
+    helper: "本月新增 4 人",
     icon: UsersRound,
   },
 ]
 
 const activities = [
   {
-    title: "AI code review assistant updated",
-    description: "The project owner reviewed the latest collaboration progress.",
-    time: "15 min ago",
+    title: "AI 代码审查助手已更新",
+    description: "项目发起人已查看最新协作进度。",
+    time: "15 分钟前",
     href: "/projects/1",
   },
   {
-    title: "New phase application status available",
-    description: "A project phase application has entered the review queue.",
-    time: "2 hours ago",
+    title: "工序申请状态有更新",
+    description: "一个项目工序申请已进入审核队列。",
+    time: "2 小时前",
     href: "/projects",
   },
   {
-    title: "Revenue share plan refreshed",
-    description: "A project's phase share plan has been updated.",
-    time: "Yesterday",
+    title: "收益分配方案已刷新",
+    description: "项目的工序分成方案已更新。",
+    time: "昨天",
     href: "/projects",
   },
 ]
 
 function formatDate(date: string | null) {
   if (!date) {
-    return "Just now"
+    return "刚刚"
   }
 
   return new Intl.DateTimeFormat("zh-CN", {
@@ -126,6 +133,10 @@ function statusClass(status: string) {
   return "border-amber-500/30 bg-amber-500/12 text-amber-300"
 }
 
+function getFirst<T>(value: T | T[] | null | undefined) {
+  return Array.isArray(value) ? value[0] : value
+}
+
 export default async function DashboardPage() {
   const supabase = await createClient()
   const {
@@ -138,41 +149,11 @@ export default async function DashboardPage() {
 
   const { data: phaseApplicationsData } = await supabase
     .from("phase_applications")
-    .select("id, phase_id, status, created_at")
+    .select(
+      "id, phase_id, status, created_at, project_phases(id, project_id, name, projects(id, name))",
+    )
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
-
-  const phaseApplicationRows =
-    (phaseApplicationsData ?? []) as PhaseApplicationRow[]
-  const phaseIds = Array.from(
-    new Set(
-      phaseApplicationRows
-        .map((application) => application.phase_id)
-        .filter((id): id is string | number => Boolean(id)),
-    ),
-  )
-
-  const { data: phasesData } =
-    phaseIds.length > 0
-      ? await supabase
-          .from("project_phases")
-          .select("id, project_id, name")
-          .in("id", phaseIds)
-      : { data: [] }
-  const phaseRows = (phasesData ?? []) as PhaseRow[]
-  const projectIds = Array.from(
-    new Set(
-      phaseRows
-        .map((phase) => phase.project_id)
-        .filter((id): id is string | number => Boolean(id)),
-    ),
-  )
-
-  const { data: projectNamesData } =
-    projectIds.length > 0
-      ? await supabase.from("projects").select("id, name").in("id", projectIds)
-      : { data: [] }
-  const projectNameRows = (projectNamesData ?? []) as ProjectNameRow[]
 
   const { data: publishedProjectsData } = await supabase
     .from("projects")
@@ -180,24 +161,18 @@ export default async function DashboardPage() {
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
 
-  const phaseMap = new Map(phaseRows.map((phase) => [String(phase.id), phase]))
-  const projectMap = new Map(
-    projectNameRows.map((project) => [String(project.id), project]),
-  )
+  const phaseApplicationRows =
+    (phaseApplicationsData ?? []) as PhaseApplicationRow[]
   const myPhaseApplications: MyPhaseApplication[] = phaseApplicationRows.map(
     (application) => {
-      const phase = application.phase_id
-        ? phaseMap.get(String(application.phase_id))
-        : undefined
-      const project = phase?.project_id
-        ? projectMap.get(String(phase.project_id))
-        : undefined
+      const phase = getFirst(application.project_phases)
+      const project = getFirst(phase?.projects)
 
       return {
         id: application.id,
         project_id: phase?.project_id ?? null,
-        project_name: project?.name || "Untitled project",
-        phase_name: phase?.name || "Untitled phase",
+        project_name: project?.name || "未命名项目",
+        phase_name: phase?.name || "未命名工序",
         status: application.status || STATUS_PENDING,
         created_at: application.created_at,
       }
@@ -236,6 +211,7 @@ export default async function DashboardPage() {
                 <Link
                   key={item.label}
                   href={item.href}
+                  prefetch={true}
                   className={cn(
                     "flex min-w-max items-center gap-3 px-6 py-4 text-sm font-medium transition-colors hover:underline lg:min-w-0",
                     item.active
@@ -255,10 +231,10 @@ export default async function DashboardPage() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-4xl font-black tracking-normal text-white">
-                Dashboard
+                仪表盘
               </h1>
               <p className="mt-3 text-sm text-white/45">
-                Track your project collaboration, phase applications, and recent activity.
+                查看项目协作、工序申请与最近活动。
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -266,8 +242,10 @@ export default async function DashboardPage() {
                 <Bell className="size-5" aria-hidden="true" />
               </div>
               <div className="rounded-xl border border-white/10 bg-[#10101A] px-4 py-3 text-sm text-white/58">
-                Current user:
-                <span className="ml-2 font-medium text-white">{displayName}</span>
+                当前用户：
+                <span className="ml-2 font-medium text-white">
+                  {displayName}
+                </span>
               </div>
             </div>
           </div>
@@ -305,13 +283,13 @@ export default async function DashboardPage() {
           <Card className="mt-6 rounded-xl border-white/10 bg-[#10101A] py-0 text-white shadow-none">
             <CardHeader className="p-6 pb-2">
               <CardTitle className="text-xl font-bold text-white">
-                My Published Projects
+                我发布的项目
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6 pt-4">
               {publishedProjects.length === 0 ? (
                 <div className="rounded-lg border border-white/10 bg-white/[0.03] p-5 text-sm text-white/45">
-                  No published projects
+                  暂无发布的项目
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -323,12 +301,13 @@ export default async function DashboardPage() {
                       <div className="min-w-0">
                         <Link
                           href={`/projects/${project.id}`}
+                          prefetch={true}
                           className="font-semibold text-white transition-colors hover:text-[#8D87FF] hover:underline"
                         >
-                          {project.name || "Untitled project"}
+                          {project.name || "未命名项目"}
                         </Link>
                         <p className="mt-1 text-xs text-white/35">
-                          Applications: {project.project_applications?.length ?? 0}
+                          申请数：{project.project_applications?.length ?? 0}
                         </p>
                       </div>
                       <span className="w-fit rounded-full border border-amber-500/30 bg-amber-500/12 px-3 py-1 text-xs font-medium text-amber-300">
@@ -344,7 +323,7 @@ export default async function DashboardPage() {
           <Card className="mt-6 rounded-xl border-white/10 bg-[#10101A] py-0 text-white shadow-none">
             <CardHeader className="p-6 pb-2">
               <CardTitle className="text-xl font-bold text-white">
-                My Applications
+                我的申请
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6 pt-4">
@@ -366,6 +345,7 @@ export default async function DashboardPage() {
                               ? `/projects/${application.project_id}`
                               : "/projects"
                           }
+                          prefetch={true}
                           className="font-semibold text-white transition-colors hover:text-[#8D87FF] hover:underline"
                         >
                           {application.project_name}
@@ -396,7 +376,7 @@ export default async function DashboardPage() {
             <CardHeader className="p-6 pb-2">
               <div className="flex items-center justify-between gap-4">
                 <CardTitle className="text-xl font-bold text-white">
-                  Recent Activity
+                  最近活动
                 </CardTitle>
                 <Bell className="size-5 text-[#8D87FF]" aria-hidden="true" />
               </div>
@@ -417,6 +397,7 @@ export default async function DashboardPage() {
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <Link
                           href={activity.href}
+                          prefetch={true}
                           className="font-semibold text-white transition-colors hover:text-[#8D87FF] hover:underline"
                         >
                           {activity.title}

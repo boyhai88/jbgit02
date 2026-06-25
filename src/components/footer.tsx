@@ -21,8 +21,8 @@ const footerColumns = [
     title: "联系",
     links: [
       { label: "hello@jbgit.dev", href: "mailto:hello@jbgit.dev" },
-      { label: "Twitter/X", href: "https://x.com" },
-      { label: "GitHub", href: "https://github.com/boyhai88/jbgit" },
+      { label: "Twitter/X", href: "#" },
+      { label: "GitHub", href: "https://github.com/boyhai88/jbgit02" },
     ],
   },
 ]
