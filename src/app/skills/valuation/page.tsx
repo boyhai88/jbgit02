@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 
 import { useAuth } from "@/components/auth/auth-provider"
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { createClient } from "@/lib/supabase/client"
 
 const stacks = [
   "React",
@@ -93,11 +94,54 @@ export default function SkillValuationPage() {
   const [years, setYears] = useState("3")
   const [result, setResult] = useState<ValuationResult | null>(null)
   const [loginMessage, setLoginMessage] = useState(false)
-  const metadata = user?.user_metadata ?? {}
-  const isSubscribed =
-    metadata.is_subscribed === true ||
-    metadata.subscribed === true ||
-    metadata.subscription_status === "active"
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false)
+  const [isSubscribed, setIsSubscribed] = useState(false)
+
+  useEffect(() => {
+    let mounted = true
+
+    async function loadSubscriptionStatus() {
+      if (!user) {
+        setIsSubscribed(false)
+        return
+      }
+
+      setSubscriptionLoading(true)
+
+      try {
+        const supabase = createClient()
+        const { data, error } = await supabase
+          .from("user_subscriptions")
+          .select("id, status")
+          .eq("user_id", user.id)
+          .eq("status", "active")
+          .limit(1)
+          .maybeSingle()
+
+        if (!mounted) {
+          return
+        }
+
+        if (error) {
+          console.error("读取订阅状态失败:", error)
+          setIsSubscribed(false)
+          return
+        }
+
+        setIsSubscribed(Boolean(data))
+      } finally {
+        if (mounted) {
+          setSubscriptionLoading(false)
+        }
+      }
+    }
+
+    void loadSubscriptionStatus()
+
+    return () => {
+      mounted = false
+    }
+  }, [user])
 
   function handleValuation() {
     if (!loading && !user) {
@@ -197,7 +241,7 @@ export default function SkillValuationPage() {
                 <div className="flex min-h-[320px] items-center justify-center rounded-xl border border-[#6C63FF]/35 bg-[#6C63FF]/10 text-sm font-medium text-white">
                   请登录查看技能估值
                 </div>
-              ) : loading ? (
+              ) : loading || subscriptionLoading ? (
                 <div className="flex min-h-[320px] items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-sm text-white/45">
                   正在读取登录状态...
                 </div>

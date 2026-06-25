@@ -52,6 +52,13 @@ function getAvatarUrl(metadata: Record<string, unknown> | null | undefined) {
   return undefined
 }
 
+function getIsSubscribed(metadata: Record<string, unknown> | null | undefined) {
+  const subscribed = metadata?.subscribed
+  const subscriptionStatus = metadata?.subscription_status
+
+  return subscribed === true || subscriptionStatus === "active"
+}
+
 export function SiteNav() {
   const pathname = usePathname()
   const router = useRouter()
@@ -80,6 +87,7 @@ export function SiteNav() {
   const email = user?.email ?? ""
   const avatarUrl = user ? getAvatarUrl(user.user_metadata) : undefined
   const initial = getEmailInitial(email)
+  const isSubscribed = user ? getIsSubscribed(user.user_metadata) : false
 
   return (
     <header className="border-b border-white/10 bg-[#05050B] text-white">
@@ -127,6 +135,18 @@ export function SiteNav() {
             >
               创建企业
             </Link>
+            {isSubscribed ? (
+              <span className="hidden rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 md:inline-flex">
+                已订阅
+              </span>
+            ) : (
+              <Link
+                href="/payment"
+                className="hidden rounded-lg border border-[#6C63FF] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#6C63FF] md:inline-flex"
+              >
+                订阅
+              </Link>
+            )}
           <DropdownMenu>
             <DropdownMenuTrigger
               aria-label="打开用户菜单"
