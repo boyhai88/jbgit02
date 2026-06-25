@@ -1,4 +1,15 @@
-import { Bell, CreditCard, KeyRound, Mail, ShieldCheck, UserRound } from "lucide-react"
+import {
+  Award,
+  Bell,
+  CreditCard,
+  KeyRound,
+  Mail,
+  Medal,
+  ShieldCheck,
+  Star,
+  Trophy,
+  UserRound,
+} from "lucide-react"
 import Link from "next/link"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -21,7 +32,7 @@ const joinedProjects = [
     name: "开源 AI 代码审查助手",
     role: "前端开发",
     status: "进行中",
-    contribution: "Dashboard UI",
+    contribution: "Dashboard UI 与代码审查工作流",
   },
   {
     id: "PR3-004",
@@ -62,6 +73,13 @@ const settings = [
   },
 ]
 
+const defaultBadges = [
+  "可信协作者",
+  "快速响应",
+  "高质量交付",
+  "项目推进者",
+]
+
 function getMetadataString(metadata: Metadata, keys: string[]) {
   for (const key of keys) {
     const value = metadata[key]
@@ -72,6 +90,56 @@ function getMetadataString(metadata: Metadata, keys: string[]) {
   }
 
   return undefined
+}
+
+function getMetadataNumber(metadata: Metadata, keys: string[], fallback: number) {
+  for (const key of keys) {
+    const value = metadata[key]
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value
+    }
+
+    if (typeof value === "string") {
+      const parsed = Number(value)
+
+      if (Number.isFinite(parsed)) {
+        return parsed
+      }
+    }
+  }
+
+  return fallback
+}
+
+function getMetadataBadges(metadata: Metadata) {
+  const value = metadata.badges
+
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string")
+  }
+
+  return defaultBadges
+}
+
+function getReputationLevel(reputation: number) {
+  if (reputation > 1000) {
+    return "钻石"
+  }
+
+  if (reputation >= 601) {
+    return "铂金"
+  }
+
+  if (reputation >= 301) {
+    return "黄金"
+  }
+
+  if (reputation >= 101) {
+    return "白银"
+  }
+
+  return "青铜"
 }
 
 function getInitial(displayName: string, email: string) {
@@ -91,62 +159,131 @@ export default async function ProfilePage() {
     user?.email?.split("@")[0] ??
     "JBGIT 用户"
   const avatarUrl = getMetadataString(metadata, ["avatar_url", "picture"])
+  const reputation = user
+    ? getMetadataNumber(metadata, ["reputation", "reputation_score"], 386)
+    : 0
+  const reputationLevel = getReputationLevel(reputation)
+  const badges = user ? getMetadataBadges(metadata) : []
   const initial = getInitial(displayName, user?.email ?? "")
 
   return (
     <main className="min-h-screen bg-[#05050B] text-white">
       <section className="mx-auto grid w-full max-w-[960px] gap-6 px-6 py-8 lg:grid-cols-[340px_1fr]">
-        <Card className="rounded-xl border-white/10 bg-[#10101A] py-0 text-white shadow-none">
-          <CardContent className="p-6">
-            <div className="flex items-start gap-4">
-              <Avatar className="size-16 border border-[#6C63FF]/45 bg-[#6C63FF]">
-                <AvatarImage src={avatarUrl} alt={`${displayName} 头像`} />
-                <AvatarFallback className="bg-[#6C63FF] text-xl font-bold text-white">
-                  {initial}
-                </AvatarFallback>
-              </Avatar>
-              <div className="min-w-0">
-                <p className="text-xl font-bold text-white">{displayName}</p>
-                <p className="mt-2 flex items-center gap-2 truncate text-sm text-white/50">
-                  <Mail className="size-4 shrink-0" aria-hidden="true" />
-                  {email}
-                </p>
+        <div className="grid gap-6">
+          <Card className="rounded-xl border-white/10 bg-[#10101A] py-0 text-white shadow-none">
+            <CardContent className="p-6">
+              <div className="flex items-start gap-4">
+                <Avatar className="size-16 border border-[#6C63FF]/45 bg-[#6C63FF]">
+                  <AvatarImage src={avatarUrl} alt={`${displayName} 头像`} />
+                  <AvatarFallback className="bg-[#6C63FF] text-xl font-bold text-white">
+                    {initial}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0">
+                  <p className="text-xl font-bold text-white">{displayName}</p>
+                  <p className="mt-2 flex items-center gap-2 truncate text-sm text-white/50">
+                    <Mail className="size-4 shrink-0" aria-hidden="true" />
+                    {email}
+                  </p>
+                </div>
               </div>
-            </div>
 
-            <div className="mt-6 grid grid-cols-2 gap-3 border-t border-white/10 pt-5">
-              <div className="rounded-lg bg-white/5 p-4">
-                <p className="font-mono text-2xl text-[#8D87FF]">
-                  {user ? joinedProjects.length : 0}
-                </p>
-                <p className="mt-1 text-xs text-white/45">参与项目</p>
+              <div className="mt-6 grid grid-cols-2 gap-3 border-t border-white/10 pt-5">
+                <div className="rounded-lg bg-white/5 p-4">
+                  <p className="font-mono text-2xl text-[#8D87FF]">
+                    {user ? joinedProjects.length : 0}
+                  </p>
+                  <p className="mt-1 text-xs text-white/45">参与项目</p>
+                </div>
+                <div className="rounded-lg bg-white/5 p-4">
+                  <p className="font-mono text-2xl text-emerald-400">
+                    {user ? "92%" : "--"}
+                  </p>
+                  <p className="mt-1 text-xs text-white/45">协作完成率</p>
+                </div>
               </div>
-              <div className="rounded-lg bg-white/5 p-4">
-                <p className="font-mono text-2xl text-emerald-400">
-                  {user ? "92%" : "--"}
-                </p>
-                <p className="mt-1 text-xs text-white/45">协作完成率</p>
-              </div>
-            </div>
 
-            {!user ? (
-              <div className="mt-5 rounded-lg border border-[#6C63FF]/25 bg-[#6C63FF]/10 p-4">
-                <p className="text-sm leading-6 text-white/68">
-                  登录后可查看真实个人资料、项目协作记录和账户设置。
-                </p>
-                <Link
-                  href="/auth/login"
-                  className={cn(
-                    buttonVariants({ size: "lg" }),
-                    "mt-4 h-10 rounded-lg bg-[#6C63FF] px-4 text-white hover:bg-[#5B54E8]",
-                  )}
-                >
-                  登录账户
-                </Link>
+              {!user ? (
+                <div className="mt-5 rounded-lg border border-[#6C63FF]/25 bg-[#6C63FF]/10 p-4">
+                  <p className="text-sm leading-6 text-white/68">
+                    登录后可查看真实个人资料、项目信誉、协作记录和账户设置。
+                  </p>
+                  <Link
+                    href="/auth/login"
+                    className={cn(
+                      buttonVariants({ size: "lg" }),
+                      "mt-4 h-10 rounded-lg bg-[#6C63FF] px-4 text-white hover:bg-[#5B54E8]",
+                    )}
+                  >
+                    登录账户
+                  </Link>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-xl border-white/10 bg-[#10101A] py-0 text-white shadow-none">
+            <CardHeader className="p-6 pb-3">
+              <CardTitle className="flex items-center gap-2 text-xl font-bold text-white">
+                <Trophy className="size-5 text-[#8D87FF]" aria-hidden="true" />
+                信誉体系
+              </CardTitle>
+              <CardDescription className="text-white/45">
+                信誉分由项目交付、协作评价、响应速度和历史贡献综合计算
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-6 pt-2">
+              <div className="rounded-xl border border-[#6C63FF]/25 bg-[#6C63FF]/10 p-5">
+                <div className="flex items-end justify-between gap-4">
+                  <div>
+                    <p className="text-sm text-white/50">用户信誉分</p>
+                    <p className="mt-2 font-mono text-4xl font-bold text-white">
+                      {reputation}
+                    </p>
+                  </div>
+                  <div className="rounded-full border border-[#6C63FF]/40 bg-[#6C63FF]/20 px-4 py-2 text-sm font-semibold text-[#C8C5FF]">
+                    {reputationLevel}
+                  </div>
+                </div>
+                <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-[#6C63FF]"
+                    style={{ width: `${Math.min(reputation / 10, 100)}%` }}
+                  />
+                </div>
               </div>
-            ) : null}
-          </CardContent>
-        </Card>
+
+              <div className="mt-5">
+                <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                  <Award className="size-4 text-[#8D87FF]" aria-hidden="true" />
+                  已获得徽章
+                </div>
+                {badges.length === 0 ? (
+                  <p className="mt-3 rounded-lg border border-white/10 bg-white/[0.03] p-4 text-sm text-white/45">
+                    暂无徽章，完成项目协作后即可逐步解锁。
+                  </p>
+                ) : (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {badges.map((badge) => (
+                      <span
+                        key={badge}
+                        className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-sm text-white/75"
+                      >
+                        <Medal className="size-4 text-[#8D87FF]" aria-hidden="true" />
+                        {badge}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-5 grid gap-2 text-xs text-white/42">
+                <p>0-100：青铜 · 101-300：白银 · 301-600：黄金</p>
+                <p>601-1000：铂金 · 1000+：钻石</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
         <div className="grid gap-6">
           <Card className="rounded-xl border-white/10 bg-[#10101A] py-0 text-white shadow-none">
@@ -191,7 +328,8 @@ export default async function ProfilePage() {
 
           <Card className="rounded-xl border-white/10 bg-[#10101A] py-0 text-white shadow-none">
             <CardHeader className="p-6 pb-3">
-              <CardTitle className="text-xl font-bold text-white">
+              <CardTitle className="flex items-center gap-2 text-xl font-bold text-white">
+                <Star className="size-5 text-[#8D87FF]" aria-hidden="true" />
                 账户设置
               </CardTitle>
               <CardDescription className="text-white/45">
