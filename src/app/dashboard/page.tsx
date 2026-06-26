@@ -303,7 +303,7 @@ export default async function DashboardPage() {
                 查看项目协作、工序申请与最近活动。
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <details className="group relative">
                 <summary className="flex size-11 cursor-pointer list-none items-center justify-center rounded-xl border border-white/10 bg-[#10101A] text-[#8D87FF] transition hover:border-[#6C63FF]/50 [&::-webkit-details-marker]:hidden">
                   <Bell className="size-5" aria-hidden="true" />
@@ -367,9 +367,7 @@ export default async function DashboardPage() {
                                       : "border-red-500/30 bg-red-500/12 text-red-200",
                                   )}
                                 >
-                                  {notification.is_read
-                                    ? "已读"
-                                    : "未读"}
+                                  {notification.is_read ? "已读" : "未读"}
                                 </span>
                               </div>
                               <p className="mt-2 text-xs leading-5 text-white/55">
@@ -386,13 +384,6 @@ export default async function DashboardPage() {
                   </div>
                 </div>
               </details>
-
-              <div className="rounded-xl border border-white/10 bg-[#10101A] px-4 py-3 text-sm text-white/58">
-                当前用户：
-                <span className="ml-2 font-medium text-white">
-                  {displayName}
-                </span>
-              </div>
             </div>
           </div>
 
