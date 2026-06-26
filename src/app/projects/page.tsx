@@ -1,7 +1,11 @@
+"use client"
+
+import { Search, X } from "lucide-react"
 import Link from "next/link"
+import { useEffect, useMemo, useState } from "react"
 
 import { SiteFooter } from "@/components/footer"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 
 type Project = {
@@ -19,10 +23,6 @@ type Project = {
 
 type Profile = {
   skills?: string[] | string | null
-}
-
-type ProjectsPageProps = {
-  searchParams?: Promise<{ sort?: string }> | { sort?: string }
 }
 
 const filterTags = ["全部", "React", "Rust", "Python", "AI/ML", "区块链", "最新发布"]
@@ -186,41 +186,81 @@ function sortProjects(projects: Project[], sort: string, userSkills: string[]) {
   return sorted.sort((a, b) => getCreatedTime(b) - getCreatedTime(a))
 }
 
-export default async function ProjectsPage({ searchParams }: ProjectsPageProps) {
-  const params = searchParams ? await searchParams : {}
-  const requestedSort = params.sort ?? "latest"
-  const activeSort = sortOptions.some((item) => item.value === requestedSort)
-    ? requestedSort
-    : "latest"
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+export default function ProjectsPage() {
+  const [projects, setProjects] = useState<Project[]>(fallbackProjects)
+  const [userSkills, setUserSkills] = useState<string[]>([])
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [activeSort, setActiveSort] = useState("latest")
+  const [searchQuery, setSearchQuery] = useState("")
 
-  const { data: projects } = await supabase
-    .from("projects")
-    .select("*, project_applications(id)")
-    .order("created_at", { ascending: false })
+  useEffect(() => {
+    let mounted = true
 
-  let userSkills: string[] = []
+    async function loadProjects() {
+      const supabase = createClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
 
-  if (user) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("skills")
-      .eq("id", user.id)
-      .maybeSingle()
+      if (!mounted) {
+        return
+      }
 
-    userSkills = getSkills((profile as Profile | null)?.skills)
-  }
+      setIsLoggedIn(Boolean(user))
 
-  const displayProjects =
-    projects && projects.length > 0 ? (projects as Project[]) : fallbackProjects
-  const sortedProjects = sortProjects(
-    displayProjects,
-    activeSort === "smart" && !user ? "latest" : activeSort,
-    userSkills,
+      const { data: projectData } = await supabase
+        .from("projects")
+        .select("*, project_applications(id)")
+        .order("created_at", { ascending: false })
+
+      if (mounted && projectData && projectData.length > 0) {
+        setProjects(projectData as Project[])
+      }
+
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("skills")
+          .eq("id", user.id)
+          .maybeSingle()
+
+        if (mounted) {
+          setUserSkills(getSkills((profile as Profile | null)?.skills))
+        }
+      }
+    }
+
+    void loadProjects()
+
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  const sortedProjects = useMemo(
+    () =>
+      sortProjects(
+        projects,
+        activeSort === "smart" && !isLoggedIn ? "latest" : activeSort,
+        userSkills,
+      ),
+    [activeSort, isLoggedIn, projects, userSkills],
   )
+
+  const filteredProjects = useMemo(() => {
+    const keyword = searchQuery.trim().toLowerCase()
+
+    if (!keyword) {
+      return sortedProjects
+    }
+
+    return sortedProjects.filter((project) => {
+      const name = project.name?.toLowerCase() ?? ""
+      const description = project.description?.toLowerCase() ?? ""
+
+      return name.includes(keyword) || description.includes(keyword)
+    })
+  }, [searchQuery, sortedProjects])
 
   return (
     <main className="min-h-screen bg-black text-white">
@@ -238,6 +278,35 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
                 + 发布项目
               </button>
             </Link>
+          </div>
+
+          <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-gray-800 bg-gray-950 p-4 sm:flex-row sm:items-center">
+            <div className="relative flex-1">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-gray-500"
+                aria-hidden="true"
+              />
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="搜索项目名称、项目描述..."
+                className="h-11 w-full rounded-xl border border-gray-800 bg-black/30 pl-10 pr-10 text-sm text-white outline-none transition placeholder:text-gray-500 focus:border-[#6C63FF] focus:ring-2 focus:ring-[#6C63FF]/20"
+              />
+              {searchQuery ? (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  aria-label="清空搜索"
+                  className="absolute right-2 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-full text-gray-400 transition hover:bg-white/10 hover:text-white"
+                >
+                  <X className="size-4" aria-hidden="true" />
+                </button>
+              ) : null}
+            </div>
+            <div className="text-sm text-gray-500">
+              {searchQuery ? `找到 ${filteredProjects.length} 个项目` : "实时搜索"}
+            </div>
           </div>
 
           <div className="mb-5 flex flex-wrap gap-3">
@@ -271,14 +340,13 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
               </div>
               <div className="flex flex-wrap gap-2">
                 {sortOptions.map((option) => {
-                  const disabled = option.value === "smart" && !user
+                  const disabled = option.value === "smart" && !isLoggedIn
 
                   return (
-                    <Link
+                    <button
                       key={option.value}
-                      href={
-                        disabled ? "/projects?sort=smart" : `/projects?sort=${option.value}`
-                      }
+                      type="button"
+                      onClick={() => setActiveSort(option.value)}
                       className={cn(
                         "rounded-full border px-4 py-2 text-sm transition",
                         activeSort === option.value
@@ -287,71 +355,77 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
                       )}
                     >
                       {option.label}
-                    </Link>
+                    </button>
                   )
                 })}
               </div>
             </div>
-            {activeSort === "smart" && !user ? (
+            {activeSort === "smart" && !isLoggedIn ? (
               <div className="mt-4 rounded-xl border border-[#6C63FF]/30 bg-[#6C63FF]/10 px-4 py-3 text-sm text-[#B8B4FF]">
                 登录查看个性化推荐
               </div>
             ) : null}
           </div>
 
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {sortedProjects.map((project) => {
-              const projectSkills = getSkills(project.skills)
+          {filteredProjects.length === 0 ? (
+            <div className="rounded-2xl border border-gray-800 bg-gray-900 p-10 text-center text-gray-400">
+              未找到相关项目
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {filteredProjects.map((project) => {
+                const projectSkills = getSkills(project.skills)
 
-              return (
-                <div
-                  key={project.id}
-                  className="rounded-xl border border-gray-800 bg-gray-900 p-6 transition hover:border-[#6C63FF]"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <h2 className="text-xl font-semibold text-white">
-                      {project.name || "未命名项目"}
-                    </h2>
-                    {activeSort === "smart" && user ? (
-                      <span className="shrink-0 rounded-full border border-[#6C63FF]/30 bg-[#6C63FF]/15 px-2 py-1 text-xs text-[#B8B4FF]">
-                        匹配 {project.matchScore ?? 0}
+                return (
+                  <div
+                    key={project.id}
+                    className="rounded-xl border border-gray-800 bg-gray-900 p-6 transition hover:border-[#6C63FF]"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <h2 className="text-xl font-semibold text-white">
+                        {project.name || "未命名项目"}
+                      </h2>
+                      {activeSort === "smart" && isLoggedIn ? (
+                        <span className="shrink-0 rounded-full border border-[#6C63FF]/30 bg-[#6C63FF]/15 px-2 py-1 text-xs text-[#B8B4FF]">
+                          匹配 {project.matchScore ?? 0}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-2 line-clamp-2 text-sm text-gray-400">
+                      {project.description || "暂无项目描述"}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {projectSkills.map((skill) => (
+                        <span
+                          key={`${project.id}-${skill}`}
+                          className="rounded-full bg-[#6C63FF]/20 px-3 py-1 text-xs text-[#6C63FF]"
+                        >
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="mt-4 flex items-center justify-between text-sm">
+                      <span className="text-gray-400">
+                        {project.headcount || 0} 人
                       </span>
-                    ) : null}
-                  </div>
-                  <p className="mt-2 line-clamp-2 text-sm text-gray-400">
-                    {project.description || "暂无项目描述"}
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {projectSkills.map((skill) => (
-                      <span
-                        key={`${project.id}-${skill}`}
-                        className="rounded-full bg-[#6C63FF]/20 px-3 py-1 text-xs text-[#6C63FF]"
-                      >
-                        {skill}
+                      <span className="font-medium text-[#6C63FF]">
+                        ${project.budget || 0}
                       </span>
-                    ))}
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
+                      <span>{project.status || "招募中"}</span>
+                      <span>申请 {getApplicationCount(project)} 人</span>
+                    </div>
+                    <Link href={`/projects/${project.id}`}>
+                      <button className="mt-4 w-full rounded-lg border border-[#6C63FF] px-4 py-2 text-[#6C63FF] transition hover:bg-[#6C63FF] hover:text-white">
+                        查看详情
+                      </button>
+                    </Link>
                   </div>
-                  <div className="mt-4 flex items-center justify-between text-sm">
-                    <span className="text-gray-400">
-                      {project.headcount || 0} 人
-                    </span>
-                    <span className="font-medium text-[#6C63FF]">
-                      ${project.budget || 0}
-                    </span>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
-                    <span>{project.status || "招募中"}</span>
-                    <span>申请 {getApplicationCount(project)} 人</span>
-                  </div>
-                  <Link href={`/projects/${project.id}`}>
-                    <button className="mt-4 w-full rounded-lg border border-[#6C63FF] px-4 py-2 text-[#6C63FF] transition hover:bg-[#6C63FF] hover:text-white">
-                      查看详情
-                    </button>
-                  </Link>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       </section>
       <div className="mt-12">
